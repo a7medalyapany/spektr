@@ -1,0 +1,15 @@
+# Go
+proxy/bin/
+# Tauri / Rust
+desktop/src-tauri/target/
+desktop/src-tauri/binaries/*
+!desktop/src-tauri/binaries/.gitkeep
+# Node
+desktop/node_modules/
+desktop/dist/
+# Runtime
+~/.spektr/
+# IDE
+.idea/
+*.swp
+.DS_Store
