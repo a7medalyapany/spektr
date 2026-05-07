@@ -1,12 +1,7 @@
-import "./App.css";
+import { AppShell } from "./components/layout/AppShell";
 
 function App() {
- 
-  return (
-    <div className="App">
-      Hello
-    </div>
-  );
+  return <AppShell />;
 }
 
 export default App;
