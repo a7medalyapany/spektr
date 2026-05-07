@@ -1,224 +1,902 @@
 # Spektr — Phased Build Plan
 
-> Engineering lead's orchestration document.
-> Each phase is independently shippable. Read fully before starting each one.
+> All paths are relative to the repo root (`~/spektr/`).
+> Go commands always run from `proxy/`. npm/tauri commands always run from `desktop/`.
+
+---
+
+## Current state after setup.sh
+
+- `proxy/pkg/types/event.go` — ✅ complete (all types including ServerPID, MessageType, RawPayload)
+- `proxy/go.mod` — ✅ initialized with modernc.org/sqlite, gorilla/websocket, google/uuid
+- `proxy/cmd/spektr/main.go` — stub, needs Phase 1 implementation
+- `proxy/cmd/spektr-proxy/main.go` — stub, needs Phase 1 implementation
+- `desktop/` — ✅ Tauri v2 + React scaffolded, all npm deps installed
+- **Start at Task 2.** Task 1 (types) is already done.
 
 ---
 
 ## Before you write a single line of code
 
-### Pre-phase checklist (do this first, every time)
-1. Read `docs/ARCHITECTURE.md` fully — especially the IPC protocol and pipeline order
-2. Read `AGENTS.md` rules (Non-negotiables section)
-3. Confirm your Go version: `go version` → must be 1.26.x
-4. Open a fresh Claude Code session for each phase
-5. Use `/init` to regenerate CLAUDE.md context at the start of each session
-
-### What agents are bad at (compensate for these)
-- **Drifting from the architecture.** Agents will reach for `net/http` frameworks. They must use stdlib.
-- **Hot path violations.** Agents will add blocking calls to the proxy path. Review every proxy change manually.
-- **CGO creep.** Agents may suggest `mattn/go-sqlite3`. Always reject in favour of `modernc.org/sqlite`.
-- **Schema drift.** Agents may change the MCPEvent struct without updating SQL schema. Always do both.
+1. Read `docs/ARCHITECTURE.md` — especially the pipeline order and IPC protocol
+2. Read `AGENTS.md` rules — the non-negotiables section
+3. Keep Codex sessions focused: **one task per session**
+<!-- 4. After each task: `git add -A && git commit -m "feat(proxy): ..."` before starting the next -->
 
 ---
 
-## Phase 1 — The Eye (6-8 weeks)
-**Goal:** Working interception. Agent traffic flows through Spektr. You see it in the UI.
+## Phase 1 — The Eye
 
-### What to focus on BEFORE writing code
-- Understand `bufio.Scanner` on os.Stdin and how pipe goroutines work
-- Read the go-mitmproxy README, specifically the addon interface
-- Understand Tauri v2 sidecar pattern: https://v2.tauri.app/develop/sidecar/
-- Manually test stdio piping: `echo 'hello' | cat | cat` — understand the chain
+**Goal:** Working interception. MCP traffic flows through Spektr. You see it in the UI live.
 
-### Implementation order (critical — do this sequence)
-1. `pkg/types/event.go` — define all types before anything else
-2. `internal/storage/` — schema, migrations, write path
-3. `cmd/spektr-proxy/main.go` — the hot-path interceptor
-4. `internal/socket/server.go` — Unix socket server in daemon
-5. `internal/pipeline/parser.go` — JSON-RPC classifier
-6. `internal/pipeline/enricher.go` — metadata + request-response correlation
-7. `internal/stream/server.go` — WebSocket + REST server
-8. `cmd/spektr/main.go` — wire everything together
-9. `internal/config/` — agent config detector + patcher
-10. React UI — event timeline with TanStack Virtual
-11. Tauri shell — window, sidecar lifecycle, tray
+### Implementation order (strict — each task depends on the previous compiling)
 
-### Claude Code prompts for Phase 1
-
-**Prompt 1.1 — Go types (run first, alone)**
 ```
-Read pkg/types/event.go which already has the MCPEvent struct.
-Your task: Review it against docs/ARCHITECTURE.md DATA_MODEL section.
-Add any missing types to complete the type system:
-- Session struct
-- DaemonConfig struct (the stdin JSON config the daemon reads at startup)
-- ProxyReport struct (what spektr-proxy sends to daemon via Unix socket)
-- All enums must be string-typed constants, not iota ints
-- Add godoc comments to every exported type and field
-Do NOT add business logic. Types only.
-Run: cd proxy && go build ./pkg/... to verify.
+✅ Task 1  — Types (event.go already complete)
+   Task 2  — Storage layer
+   Task 3  — spektr-proxy hot path
+   Task 4  — Event pipeline
+   Task 5  — Daemon + WebSocket server
+   Task 6  — React UI
+   Task 7  — Wire up + smoke test
 ```
-
-**Prompt 1.2 — SQLite storage layer**
-```
-Implement internal/storage/ in the Spektr Go proxy.
-Read docs/ARCHITECTURE.md for the schema. Read pkg/types/event.go for types.
-Files to create:
-- db.go: open modernc.org/sqlite database, WAL mode OFF (single writer), PRAGMA journal_mode=DELETE
-- migrations.go: embed SQL migration files using go:embed, run on startup
-- queries.go: typed functions — InsertEvent, GetEvent, ListEvents (with filter params), InsertSession, GetSession
-- migrations/001_init.sql: full schema from ARCHITECTURE.md
-
-Rules:
-- Use modernc.org/sqlite ONLY — never mattn/go-sqlite3
-- All query functions take context.Context as first arg
-- Use prepared statements stored on the Store struct (prepare once, reuse)
-- Write table-driven tests in db_test.go using t.TempDir() for the DB path
-Run: cd proxy && go test ./internal/storage/...
-```
-
-**Prompt 1.3 — spektr-proxy hot path**
-```
-Implement cmd/spektr-proxy/main.go — the stdio interceptor.
-Read AGENTS.md hot-path rules. Read docs/ARCHITECTURE.md proxy section.
-Read internal/interceptor/socket.go (Unix socket client — implement this first).
-
-The proxy must:
-1. Parse flags: --server (name), --socket (path), then -- <real command and args>
-2. Start real MCP server: exec.Command(args[0], args[1:]...) with stdin/stdout pipes
-3. Start Unix socket client: connect to daemon socket (non-blocking, retry 3x with 100ms backoff)
-4. Goroutine A — Agent→Server: read os.Stdin line by line (bufio.Scanner), send copy to daemon
-   via socket (1ms timeout, fire-and-forget), write to real server's stdin
-5. Goroutine B — Server→Agent: read real server stdout line by line, send copy to daemon,
-   write to os.Stdout
-6. sync.WaitGroup both goroutines
-7. On either goroutine exit, signal the other to stop via context cancellation
-
-The Unix socket send format (newline-delimited JSON):
-{"server_name":"filesystem","direction":"request","raw":"<raw line>","ts":<unix ms>}
-
-CRITICAL: Never add parsing or blocking logic to goroutines A or B. Raw bytes only.
-Test with: echo '{}' | go run ./cmd/spektr-proxy -- cat
-```
-
-**Prompt 1.4 — Event pipeline**
-```
-Implement internal/pipeline/ in order: parser.go, enricher.go, emitter.go.
-Read docs/ARCHITECTURE.md pipeline section. Read pkg/types/event.go.
-
-parser.go:
-- func Parse(raw []byte, serverName string, direction Direction) (*types.MCPEvent, error)
-- Classify JSON-RPC into MessageType (request/response/notification/error)
-- Extract method, id, params, result
-- Call classifyMethod(method string) MethodCategory
-- Set ToolName/ToolArgs for tools/call events
-
-enricher.go:
-- func Enrich(event *types.MCPEvent, sessionID string) *types.MCPEvent
-- Assign UUID v7 ID using github.com/google/uuid
-- Set SessionID
-- Use sync.Map keyed by "serverName:messageID" to correlate request↔response
-- Set PairedID and DurationMs on responses
-
-emitter.go:
-- type Emitter struct with ring buffer (circular slice, cap 5000), ws hub, write channel
-- func (e *Emitter) Emit(event *types.MCPEvent)  — non-blocking, drops if full
-- Ring buffer uses atomic index, no mutex
-- Write channel: buffered cap 10000, consumed by single goroutine that batches SQLite inserts
-- WebSocket broadcast: goroutine per connection, drop if send channel full (never block)
-
-Write tests for parser.go and enricher.go. Emitter tested in integration test.
-```
-
-**Prompt 1.5 — WebSocket + REST server**
-```
-Implement internal/stream/server.go — the HTTP server on :48300.
-Read docs/ARCHITECTURE.md REST API endpoints section.
-
-Use Go 1.26 stdlib net/http ONLY. No external routers.
-Routes using method+path syntax: mux.HandleFunc("GET /api/sessions/{id}", ...)
-
-Implement:
-- GET /api/sessions (list from SQLite, 50 most recent)
-- GET /api/sessions/{id} (with computed stats: total_events, total_cost, duration)
-- GET /api/sessions/{id}/events (paginated, filter by ?server=&risk=&category=&limit=&offset=)
-- GET /api/sessions/{id}/events/{eid}
-- GET /api/events/live (WebSocket upgrade using gorilla/websocket)
-- Standard JSON envelope: {"data": ..., "error": null}
-
-WebSocket hub (hub.go):
-- type Hub struct with map[*Client]bool, broadcast chan []byte, register/unregister chans
-- func (h *Hub) Run() — the select loop, run in goroutine
-- func (h *Hub) Broadcast(data []byte) — non-blocking send to broadcast channel
-
-CORS: Allow only http://localhost:1420 (Vite dev) and tauri://localhost (production).
-Bind to 127.0.0.1:48300 only — never 0.0.0.0.
-```
-
-**Prompt 1.6 — React event timeline (UI)**
-```
-Implement the Spektr event timeline UI.
-Read src/stores/eventStore.ts (create if not exists) and AGENTS.md React rules.
-
-Files to create/implement:
-1. src/stores/eventStore.ts — Zustand v5 store:
-   - events: MCPEvent[] (max 5000, newest first)
-   - addEvent(e: MCPEvent): void — prepend, slice to 5000
-   - filters: { server?: string; riskLevel?: string; search?: string }
-   - selectedEventId: string | null
-   - filteredEvents computed via useMemo in components (NOT in store)
-
-2. src/hooks/useLiveEvents.ts — WebSocket hook:
-   - Connect to ws://localhost:48300/api/events/live
-   - Parse JSON → MCPEvent, call addEvent
-   - Exponential backoff reconnect (1s, 2s, 4s, max 30s)
-   - Expose: isConnected: boolean
-
-3. src/components/EventTimeline.tsx — TanStack Virtual list:
-   - Takes events: MCPEvent[] as prop
-   - useVirtualizer: estimateSize=40, overscan=10
-   - Each row: risk border (colored left strip 3px), direction badge, server badge (color from hash),
-     method label, tool name (bold), duration (ms), cost ($)
-   - Click row → selectEvent
-
-4. src/components/EventDetail.tsx — right panel:
-   - Shows selected event or empty state
-   - Tabs: Params | Result | Risk | Raw
-   - CodeMirror 6 JSON viewer in Params and Result tabs
-   - Risk tab: list of RiskFlag with severity badge
-
-5. src/App.tsx — layout: sidebar (20%) | EventTimeline (50%) | EventDetail (30%)
-
-Use Tailwind v4 utility classes. shadcn/ui for badges, tabs, skeleton states.
-Server color: derive hue from hash(serverName) % 360, use HSL.
-```
-
-### Phase 1 success criteria
-- [ ] `echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | spektr-proxy --server test --socket /tmp/spektr.sock -- cat` outputs the line unchanged and daemon receives it
-- [ ] Events appear in the UI within 100ms of being intercepted
-- [ ] Patching and restoring a real Claude Code config file works without data loss
-- [ ] UI renders 10,000 events without frame drops (test with mock data)
-- [ ] `make test` passes
 
 ---
 
-## Phase 2 — The Brain (4-5 weeks)
-**Goal:** Risk engine, cost tracking, auto-pause, session replay.
+### Task 2 — Storage layer
 
-### Implementation order
-1. `internal/pipeline/risk.go` — full rule set
-2. Auto-pause protocol in `spektr-proxy` (reverse socket message)
-3. `internal/pipeline/cost.go`
-4. Session replay endpoint + playback UI
-5. OS notifications for critical events (Tauri notification plugin)
+**Storage files are split by domain, all in `package storage`:**
 
-### Claude Code prompt for Phase 2 (risk engine)
 ```
-Implement internal/pipeline/risk.go in the Spektr Go proxy.
-Read docs/ARCHITECTURE.md Risk levels section. Read pkg/types/event.go.
+proxy/internal/storage/
+├── db.go             Store struct + Open()
+├── migrations.go     go:embed runner
+├── migrations/
+│   └── 001_init.sql  full schema
+├── session.go        Session CRUD
+├── event.go          Event CRUD + batch writer
+└── search.go         FTS5 full-text search
+```
 
-Implement:
+```
+Read AGENTS.md (non-negotiables: modernc/sqlite, single writer, no CGO).
+Read docs/ARCHITECTURE.md — "SQLite write pattern" and "Data Model" sections.
+Read proxy/pkg/types/event.go — these are the exact types you will persist.
+
+Create the following files in proxy/internal/storage/:
+
+── proxy/internal/storage/migrations/001_init.sql ──────────────────────────
+Full schema. Include exactly:
+
+CREATE TABLE sessions (
+    id            TEXT PRIMARY KEY,
+    agent_type    TEXT NOT NULL,
+    agent_pid     INTEGER,
+    started_at    INTEGER NOT NULL,
+    ended_at      INTEGER,
+    total_events  INTEGER DEFAULT 0,
+    total_cost    REAL    DEFAULT 0.0,
+    metadata      JSON
+);
+
+CREATE TABLE events (
+    id            TEXT PRIMARY KEY,
+    session_id    TEXT NOT NULL REFERENCES sessions(id),
+    paired_id     TEXT,
+    server_name   TEXT NOT NULL,
+    server_pid    INTEGER,
+    transport     TEXT NOT NULL,
+    direction     TEXT NOT NULL,
+    message_type  TEXT NOT NULL,
+    category      TEXT NOT NULL,
+    method        TEXT NOT NULL,
+    message_id    TEXT,
+    tool_name     TEXT,
+    params        BLOB,
+    result        BLOB,
+    error_code    INTEGER,
+    error_message TEXT,
+    timestamp     INTEGER NOT NULL,
+    duration_ms   INTEGER,
+    risk_level    TEXT NOT NULL DEFAULT 'none',
+    risk_flags    JSON DEFAULT '[]',
+    paused        INTEGER DEFAULT 0,
+    input_tokens  INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    cost_usd      REAL    DEFAULT 0.0,
+    raw_payload   BLOB
+);
+
+CREATE INDEX idx_events_session  ON events(session_id, timestamp DESC);
+CREATE INDEX idx_events_server   ON events(server_name);
+CREATE INDEX idx_events_risk     ON events(risk_level) WHERE risk_level != 'none';
+CREATE INDEX idx_events_category ON events(category);
+
+CREATE VIRTUAL TABLE events_fts USING fts5(
+    id UNINDEXED,
+    tool_name,
+    params_text,
+    result_text,
+    content='events',
+    content_rowid='rowid'
+);
+
+CREATE VIEW session_stats AS
+SELECT
+    session_id,
+    COUNT(*)                                      AS total_events,
+    COUNT(*) FILTER (WHERE direction='request')   AS total_requests,
+    SUM(cost_usd)                                 AS total_cost_usd,
+    SUM(input_tokens)                             AS total_input_tokens,
+    SUM(output_tokens)                            AS total_output_tokens,
+    COUNT(*) FILTER (WHERE risk_level='critical') AS critical_events,
+    COUNT(*) FILTER (WHERE risk_level='high')     AS high_events,
+    MAX(timestamp) - MIN(timestamp)               AS duration_ms
+FROM events
+GROUP BY session_id;
+
+── proxy/internal/storage/db.go ─────────────────────────────────────────────
+package storage
+
+type Store struct {
+    db *sql.DB
+    // Prepared statements (prepared once in Open, reused forever)
+    stmtInsertEvent   *sql.Stmt
+    stmtInsertSession *sql.Stmt
+}
+
+func Open(path string) (*Store, error)
+- Opens modernc.org/sqlite database (import _ "modernc.org/sqlite")
+- PRAGMA journal_mode=DELETE (NOT WAL — single writer, no WAL overhead)
+- PRAGMA busy_timeout=5000
+- PRAGMA foreign_keys=ON
+- Calls runMigrations(db)
+- Prepares and stores stmtInsertEvent, stmtInsertSession
+- Returns &Store{db: db, ...}
+
+func (s *Store) Close() error
+
+── proxy/internal/storage/migrations.go ─────────────────────────────────────
+//go:embed migrations/*.sql
+var migrationFS embed.FS
+
+func runMigrations(db *sql.DB) error
+- Read all *.sql files from embed.FS in sorted order
+- Execute each in a transaction
+- Idempotent: use IF NOT EXISTS on all CREATE statements
+
+── proxy/internal/storage/session.go ────────────────────────────────────────
+All functions take context.Context as first argument.
+
+func (s *Store) InsertSession(ctx context.Context, sess *types.Session) error
+func (s *Store) GetSession(ctx context.Context, id string) (*types.Session, error)
+func (s *Store) ListSessions(ctx context.Context, limit int) ([]*types.Session, error)
+func (s *Store) CloseSession(ctx context.Context, id string) error
+  - Sets ended_at = now
+
+── proxy/internal/storage/event.go ──────────────────────────────────────────
+All functions take context.Context as first argument.
+
+func (s *Store) InsertEvent(ctx context.Context, e *types.MCPEvent) error
+  - Uses s.stmtInsertEvent prepared statement
+  - Marshals e.Params, e.Result, e.RiskFlags to JSON
+  - Stores e.RawPayload as BLOB
+
+func (s *Store) BatchInsert(ctx context.Context, events []*types.MCPEvent) error
+  - Single BEGIN/COMMIT transaction
+  - Uses same prepared statement for all rows
+
+func (s *Store) GetEvent(ctx context.Context, id string) (*types.MCPEvent, error)
+func (s *Store) ListEvents(ctx context.Context, opts ListEventsOpts) ([]*types.MCPEvent, error)
+
+type ListEventsOpts struct {
+    SessionID string
+    Server    string    // filter by server_name (empty = all)
+    RiskLevel string    // filter by risk_level (empty = all)
+    Category  string    // filter by category (empty = all)
+    Limit     int       // default 100
+    Offset    int
+}
+
+── proxy/internal/storage/search.go ─────────────────────────────────────────
+func (s *Store) SearchEvents(ctx context.Context, sessionID, query string, limit int) ([]*types.MCPEvent, error)
+  - Uses FTS5 virtual table: SELECT e.* FROM events e
+    JOIN events_fts fts ON e.rowid = fts.rowid
+    WHERE events_fts MATCH ? AND e.session_id = ?
+    ORDER BY rank LIMIT ?
+
+── proxy/internal/storage/db_test.go ────────────────────────────────────────
+Table-driven tests using t.TempDir() for DB path.
+Must test:
+- Open creates schema without error
+- InsertSession + GetSession round-trip (all fields preserved)
+- InsertEvent + GetEvent round-trip (Params and RiskFlags correctly serialized)
+- ListEvents with Server filter returns only matching rows
+- BatchInsert of 500 events completes in < 100ms
+- SearchEvents returns event when tool_name matches query
+
+After: cd proxy && go test ./internal/storage/... -v -count=1
+```
+
+---
+
+### Task 3 — spektr-proxy hot path
+
+```
+Read AGENTS.md hot-path rules (agent-first section).
+Read proxy/pkg/types/event.go — specifically the ProxyReport type.
+Read docs/ARCHITECTURE.md — "How stdio interception works" section.
+
+Implement two files:
+
+── proxy/internal/interceptor/socket.go ─────────────────────────────────────
+package interceptor
+
+type SocketClient struct {
+    socketPath string
+    conn       net.Conn
+    mu         sync.Mutex
+}
+
+func NewSocketClient(socketPath string) *SocketClient
+
+func (c *SocketClient) Connect() error
+  - net.Dial("unix", c.socketPath)
+  - Retry 3 times with 100ms backoff
+  - Non-fatal: caller logs and continues if all retries fail
+
+func (c *SocketClient) ReportAsync(report *types.ProxyReport)
+  - json.Marshal the report, append '\n'
+  - c.mu.Lock() (protects concurrent goroutine A and B writes)
+  - c.conn.SetWriteDeadline(time.Now().Add(1 * time.Millisecond))
+  - Write to conn
+  - On any error: log with slog.Debug, return immediately — NEVER block
+  - c.mu.Unlock()
+
+func (c *SocketClient) Close() error
+
+── proxy/cmd/spektr-proxy/main.go ───────────────────────────────────────────
+Replace the stub entirely.
+
+1. Parse flags:
+   --server  string   (MCP server name, e.g. "filesystem")
+   --socket  string   (daemon Unix socket path, default "/tmp/spektr.sock")
+   Everything after "--" = real server command + args (flag.Args())
+
+2. Validate: if len(flag.Args()) == 0, log error and exit(1)
+
+3. Create and connect socket client (non-fatal — proxy works without daemon):
+   client := interceptor.NewSocketClient(*socket)
+   if err := client.Connect(); err != nil {
+       slog.Warn("daemon not available, running in passthrough mode", "err", err)
+   }
+
+4. Start real MCP server:
+   cmd := exec.Command(args[0], args[1:]...)
+   serverIn, _  := cmd.StdinPipe()
+   serverOut, _ := cmd.StdoutPipe()
+   cmd.Stderr = os.Stderr
+   cmd.Start()
+
+5. ctx, cancel := context.WithCancel(context.Background())
+
+6. var wg sync.WaitGroup
+   wg.Add(2)
+
+   // Goroutine A — Agent → Server
+   go func() {
+       defer wg.Done()
+       defer cancel()
+       scanner := bufio.NewScanner(os.Stdin)
+       for scanner.Scan() {
+           line := scanner.Bytes()
+           client.ReportAsync(&types.ProxyReport{
+               ServerName:  *server,
+               Direction:   types.DirectionRequest,
+               Raw:         append([]byte(nil), line...),  // copy
+               TimestampMS: time.Now().UnixMilli(),
+           })
+           serverIn.Write(append(line, '\n'))
+       }
+   }()
+
+   // Goroutine B — Server → Agent
+   go func() {
+       defer wg.Done()
+       defer cancel()
+       scanner := bufio.NewScanner(serverOut)
+       for scanner.Scan() {
+           line := scanner.Bytes()
+           client.ReportAsync(&types.ProxyReport{
+               ServerName:  *server,
+               Direction:   types.DirectionResponse,
+               Raw:         append([]byte(nil), line...),
+               TimestampMS: time.Now().UnixMilli(),
+           })
+           os.Stdout.Write(append(line, '\n'))
+       }
+   }()
+
+   // Stop when either goroutine exits or ctx cancelled
+   go func() {
+       <-ctx.Done()
+       cmd.Process.Signal(os.Interrupt)
+   }()
+
+   wg.Wait()
+   cmd.Wait()
+   client.Close()
+
+CRITICAL: Goroutines A and B contain ONLY: Scan(), ReportAsync(), Write().
+No JSON parsing. No blocking calls. No mutexes (except inside ReportAsync).
+
+Smoke test (run from repo root):
+cd proxy && echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | \
+  go run ./cmd/spektr-proxy -- cat
+Expected: same JSON line printed to stdout, process exits cleanly.
+```
+
+---
+
+### Task 4 — Event pipeline
+
+```
+Read docs/ARCHITECTURE.md — "Event pipeline" section (ordered list).
+Read proxy/pkg/types/event.go — every field.
+Read proxy/internal/storage/event.go — InsertEvent signature.
+
+Create these files in proxy/internal/pipeline/:
+
+── proxy/internal/pipeline/parser.go ────────────────────────────────────────
+package pipeline
+
+func Parse(report *types.ProxyReport) (*types.MCPEvent, error)
+  Input: a ProxyReport (server name, direction, raw JSON-RPC bytes, timestamp)
+
+  1. json.Unmarshal report.Raw into a base struct:
+     { JSONRPC, ID *json.RawMessage, Method string,
+       Params json.RawMessage, Result json.RawMessage, Error json.RawMessage }
+
+  2. Build MCPEvent:
+     - ServerName = report.ServerName
+     - Transport  = types.TransportStdio
+     - Direction  = report.Direction
+     - Timestamp  = time.UnixMilli(report.TimestampMS)
+     - Method     = base.Method
+     - MessageID  = base.ID
+     - Params     = base.Params
+     - Result     = base.Result
+
+  3. Classify MessageType:
+     - base.Method != "" && base.ID != nil  → MessageTypeRequest
+     - base.Method != "" && base.ID == nil  → MessageTypeNotification
+     - base.Result != nil                   → MessageTypeResponse
+     - base.Error != nil                    → MessageTypeError
+
+  4. Category via classifyMethod(method string) types.MethodCategory (unexported):
+     "tools/call"         → CategoryToolCall
+     "tools/list"         → CategoryToolList
+     "resources/read"     → CategoryResourceRead
+     "resources/list"     → CategoryResourceList
+     "prompts/get"        → CategoryPromptGet
+     "sampling/..."       → CategorySampling
+     anything else        → CategoryLifecycle
+
+  5. For tools/call requests: extract ToolName and ToolArgs from Params:
+     params shape: {"name": "write_file", "arguments": {...}}
+     Set event.ToolName = params.name
+     Set event.ToolArgs = params.arguments (raw JSON)
+
+  6. Set RiskLevel = types.RiskNone (enricher fills this in later)
+     Set RiskFlags = []types.RiskFlag{}
+
+  7. Store report.Raw in event.RawPayload
+
+  Return completed *types.MCPEvent
+
+── proxy/internal/pipeline/enricher.go ──────────────────────────────────────
+package pipeline
+
+type Enricher struct {
+    sessionID string
+    inFlight  sync.Map   // key: "serverName:messageID" → *types.MCPEvent
+}
+
+func NewEnricher(sessionID string) *Enricher
+
+func (e *Enricher) Enrich(event *types.MCPEvent) *types.MCPEvent
+  1. Generate UUID v7:
+     id, _ := uuid.NewV7()
+     event.ID = id.String()
+  2. event.SessionID = e.sessionID
+  3. For requests (MessageTypeRequest) with a non-nil MessageID:
+     key := event.ServerName + ":" + string(*event.MessageID)
+     e.inFlight.Store(key, event)
+  4. For responses (MessageTypeResponse) with a non-nil MessageID:
+     key := event.ServerName + ":" + string(*event.MessageID)
+     if req, ok := e.inFlight.LoadAndDelete(key); ok {
+         reqEvent := req.(*types.MCPEvent)
+         event.PairedID   = reqEvent.ID
+         reqEvent.PairedID = event.ID
+         event.DurationMs = event.Timestamp.Sub(reqEvent.Timestamp).Milliseconds()
+     }
+  5. Return event
+
+── proxy/internal/pipeline/parser_test.go ───────────────────────────────────
+Table-driven tests. Must cover:
+- Valid tools/call request: ToolName and ToolArgs extracted correctly
+- Valid tools/list request: Category = CategoryToolList
+- Response with result: MessageType = MessageTypeResponse
+- Notification (no id): MessageType = MessageTypeNotification
+- Error response: MessageType = MessageTypeError
+- Invalid JSON: returns non-nil error
+
+After: cd proxy && go test ./internal/pipeline/... -v -count=1
+```
+
+---
+
+### Task 5 — Daemon + WebSocket server
+
+```
+Read docs/ARCHITECTURE.md — "REST API endpoints" and "IPC protocol" sections.
+Read proxy/internal/storage/ — all files (know the Store API cold).
+Read proxy/internal/pipeline/ — Parse and Enrich signatures.
+
+── proxy/internal/stream/hub.go ─────────────────────────────────────────────
+package stream
+
+type Client struct {
+    hub  *Hub
+    conn *websocket.Conn
+    send chan []byte    // buffered, cap 256
+}
+
+type Hub struct {
+    clients    map[*Client]bool
+    broadcast  chan []byte
+    register   chan *Client
+    unregister chan *Client
+}
+
+func NewHub() *Hub
+
+func (h *Hub) Run()
+  Loop on select:
+  - register:   h.clients[c] = true
+  - unregister: delete(h.clients, c); close(c.send)
+  - broadcast:  for each client, non-blocking send to c.send
+    If c.send is full: delete client, close conn (never block)
+
+func (h *Hub) Broadcast(data []byte)
+  Non-blocking send to h.broadcast channel (drop if full — never block caller)
+
+── proxy/internal/stream/server.go ──────────────────────────────────────────
+package stream
+
+Use Go 1.26 stdlib net/http ONLY. Bind to 127.0.0.1:48300.
+
+CORS middleware (wrap all handlers):
+  Allow: http://localhost:1420, tauri://localhost
+  Methods: GET, POST, DELETE, OPTIONS
+  Handle OPTIONS preflight.
+
+Routes (Go 1.26 method+path syntax):
+  mux.HandleFunc("GET /api/sessions",                   s.handleListSessions)
+  mux.HandleFunc("GET /api/sessions/{id}",              s.handleGetSession)
+  mux.HandleFunc("GET /api/sessions/{id}/events",       s.handleListEvents)
+  mux.HandleFunc("GET /api/sessions/{id}/events/{eid}", s.handleGetEvent)
+  mux.HandleFunc("GET /api/events/live",                s.handleWebSocket)
+  mux.HandleFunc("POST /api/events/{id}/approve",       s.handleApprove)
+  mux.HandleFunc("POST /api/events/{id}/deny",          s.handleDeny)
+  mux.HandleFunc("DELETE /api/sessions/{id}",           s.handleDeleteSession)
+
+All JSON responses use this envelope:
+  type envelope struct {
+      Data  any    `json:"data"`
+      Error string `json:"error,omitempty"`
+  }
+  func writeJSON(w http.ResponseWriter, status int, data any)
+  func writeError(w http.ResponseWriter, status int, msg string)
+
+handleWebSocket:
+  Upgrade using gorilla/websocket (CheckOrigin: allow localhost only)
+  Register client with hub
+  Start writePump goroutine (reads from client.send, writes to ws)
+  Run readPump in current goroutine (reads ping/pong only, detects disconnect)
+
+── proxy/cmd/spektr/main.go ─────────────────────────────────────────────────
+Replace the stub entirely.
+
+func main():
+1. Setup slog JSON handler on stderr
+
+2. Read DaemonConfig from stdin:
+   var cfg types.DaemonConfig
+   json.NewDecoder(os.Stdin).Decode(&cfg)
+
+3. Open SQLite:
+   store, err := storage.Open(cfg.DBPath)
+
+4. Create session:
+   sessionID = uuid.NewV7().String()
+   store.InsertSession(ctx, &types.Session{ID: sessionID, AgentType: "unknown", StartedAt: time.Now()})
+
+5. Start pipeline components:
+   enricher := pipeline.NewEnricher(sessionID)
+   hub      := stream.NewHub()
+   go hub.Run()
+
+6. Start Unix socket server on cfg.SocketPath:
+   Listener accepts connections, each connection handled in goroutine:
+   - Read newline-delimited JSON as types.ProxyReport
+   - Call pipeline.Parse(report) → event
+   - Call enricher.Enrich(event)
+   - TODO Phase 2: call risk.Evaluate(event), cost.Estimate(event)
+   - go store.BatchInsert (via write channel)
+   - hub.Broadcast(json.Marshal(event))
+
+7. Start HTTP server on cfg.WSPort (stream.NewServer(store, hub)):
+   go http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", cfg.WSPort), server.Routes())
+
+8. Write ready signal to stdout:
+   json.NewEncoder(os.Stdout).Encode(map[string]any{"event": "ready", "ws_port": cfg.WSPort})
+
+9. Handle SIGTERM/SIGINT:
+   signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+   <-ctx.Done()
+   store.Close()
+
+After:
+cd proxy && go build ./cmd/spektr && go build ./cmd/spektr-proxy
+Both must compile with zero errors and zero warnings.
+```
+
+---
+
+### Task 6 — React UI
+
+```
+Read AGENTS.md React rules section.
+Read proxy/pkg/types/event.go — you are mirroring these types in TypeScript.
+All files are under desktop/src/. All npm commands run from desktop/.
+
+── desktop/src/types/index.ts ───────────────────────────────────────────────
+TypeScript mirror of Go types. Field names must match JSON tags exactly (camelCase).
+
+export type Direction      = 'request' | 'response' | 'notification'
+export type RiskLevel      = 'none' | 'low' | 'medium' | 'high' | 'critical'
+export type MethodCategory = 'tool_call' | 'resource_read' | 'resource_list' |
+                             'tool_list' | 'prompt_get' | 'sampling' | 'lifecycle'
+
+export interface RiskFlag {
+  rule: string
+  level: RiskLevel
+  description: string
+}
+
+export interface CostEstimate {
+  input_tokens: number
+  output_tokens: number
+  total_usd: number
+}
+
+export interface MCPEvent {
+  id: string
+  session_id: string
+  paired_id: string
+  server_name: string
+  server_pid: number
+  transport: 'stdio' | 'http'
+  direction: Direction
+  message_type: 'request' | 'response' | 'notification' | 'error'
+  category: MethodCategory
+  method: string
+  message_id?: string
+  params?: unknown
+  result?: unknown
+  tool_name?: string
+  tool_args?: unknown
+  timestamp: string          // ISO 8601
+  duration_ms: number
+  risk_level: RiskLevel
+  risk_flags: RiskFlag[]
+  paused: boolean
+  cost?: CostEstimate
+}
+
+export interface Session {
+  id: string
+  agent_type: string
+  started_at: string
+  ended_at?: string
+  total_events: number
+  total_cost_usd: number
+}
+
+── desktop/src/stores/eventStore.ts ─────────────────────────────────────────
+import { create } from 'zustand'
+import type { MCPEvent } from '@/types'
+
+interface Filters {
+  server: string | null
+  riskLevel: RiskLevel | null
+  search: string
+}
+
+interface EventStore {
+  events: MCPEvent[]
+  addEvent: (e: MCPEvent) => void
+  clearEvents: () => void
+  filters: Filters
+  setFilter: <K extends keyof Filters>(key: K, value: Filters[K]) => void
+  selectedId: string | null
+  selectEvent: (id: string | null) => void
+  isConnected: boolean
+  setConnected: (v: boolean) => void
+}
+
+export const useEventStore = create<EventStore>((set) => ({
+  events: [],
+  addEvent: (e) => set((s) => ({ events: [e, ...s.events].slice(0, 5000) })),
+  clearEvents: () => set({ events: [] }),
+  filters: { server: null, riskLevel: null, search: '' },
+  setFilter: (key, value) => set((s) => ({ filters: { ...s.filters, [key]: value } })),
+  selectedId: null,
+  selectEvent: (id) => set({ selectedId: id }),
+  isConnected: false,
+  setConnected: (v) => set({ isConnected: v }),
+}))
+
+// Derived: apply filters. Use this in components via useMemo.
+export function applyFilters(events: MCPEvent[], filters: Filters): MCPEvent[] {
+  return events.filter((e) => {
+    if (filters.server && e.server_name !== filters.server) return false
+    if (filters.riskLevel) {
+      const order = ['none','low','medium','high','critical']
+      if (order.indexOf(e.risk_level) < order.indexOf(filters.riskLevel)) return false
+    }
+    if (filters.search) {
+      const q = filters.search.toLowerCase()
+      if (!e.method.includes(q) && !(e.tool_name ?? '').includes(q)) return false
+    }
+    return true
+  })
+}
+
+── desktop/src/hooks/useLiveEvents.ts ───────────────────────────────────────
+import { useEffect, useRef } from 'react'
+import { useEventStore } from '@/stores/eventStore'
+import type { MCPEvent } from '@/types'
+
+export function useLiveEvents() {
+  const addEvent    = useEventStore((s) => s.addEvent)
+  const setConnected = useEventStore((s) => s.setConnected)
+  const retryDelay  = useRef(1000)
+
+  useEffect(() => {
+    let ws: WebSocket
+    let unmounted = false
+
+    function connect() {
+      ws = new WebSocket('ws://localhost:48300/api/events/live')
+
+      ws.onopen = () => {
+        setConnected(true)
+        retryDelay.current = 1000
+      }
+
+      ws.onmessage = (e) => {
+        try {
+          const event: MCPEvent = JSON.parse(e.data)
+          addEvent(event)
+          if (event.risk_level === 'critical') {
+            new Notification('Spektr — Critical Risk', {
+              body: `${event.server_name}: ${event.risk_flags[0]?.description ?? event.method}`,
+            })
+          }
+        } catch { /* malformed message, ignore */ }
+      }
+
+      ws.onclose = () => {
+        setConnected(false)
+        if (!unmounted) {
+          setTimeout(connect, retryDelay.current)
+          retryDelay.current = Math.min(retryDelay.current * 2, 30_000)
+        }
+      }
+    }
+
+    connect()
+    return () => { unmounted = true; ws?.close() }
+  }, [])
+}
+
+── desktop/src/lib/utils.ts ─────────────────────────────────────────────────
+// Server color: deterministic HSL from server name
+export function serverColor(name: string): string {
+  let hash = 0
+  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffffffff
+  const hue = Math.abs(hash) % 360
+  return `hsl(${hue}, 70%, 55%)`
+}
+
+// Risk level → Tailwind class for left border
+export const riskBorder: Record<string, string> = {
+  none:     'border-l-zinc-300 dark:border-l-zinc-600',
+  low:      'border-l-blue-500',
+  medium:   'border-l-amber-500',
+  high:     'border-l-orange-500',
+  critical: 'border-l-red-500 animate-pulse',
+}
+
+── desktop/src/components/EventRow.tsx ──────────────────────────────────────
+Single row in the virtualized list.
+Props: event: MCPEvent, isSelected: boolean, onClick: () => void
+
+Layout (horizontal flex, 40px tall, border-l-[3px]):
+  [risk border] [direction badge →/←] [server badge] [method · tool_name (bold)] [→ duration ms] [cost $]
+
+- Direction badge: '→' for request (blue tint), '←' for response (green tint)
+- Server badge: background = serverColor(event.server_name), white text, rounded pill
+- tool_name shown only if present (category === 'tool_call')
+- duration_ms shown only on responses (direction === 'response')
+- cost shown only if event.cost?.total_usd > 0
+- isSelected: bg-zinc-100 dark:bg-zinc-800
+
+── desktop/src/components/EventTimeline.tsx ─────────────────────────────────
+Virtualized list using @tanstack/react-virtual.
+
+Props: events: MCPEvent[]
+
+const parentRef = useRef<HTMLDivElement>(null)
+const virtualizer = useVirtualizer({
+  count: events.length,
+  getScrollElement: () => parentRef.current,
+  estimateSize: () => 40,
+  overscan: 10,
+})
+
+// Auto-scroll to top when new event arrives and user is already at top
+useEffect(() => {
+  if (parentRef.current && parentRef.current.scrollTop < 80) {
+    parentRef.current.scrollTo({ top: 0 })
+  }
+}, [events.length])
+
+Return:
+<div ref={parentRef} style={{ height: '100%', overflow: 'auto' }}>
+  <div style={{ height: virtualizer.getTotalSize() }}>
+    {virtualizer.getVirtualItems().map((vItem) => (
+      <div key={vItem.key} style={{ position:'absolute', top:0, left:0, width:'100%',
+        transform: `translateY(${vItem.start}px)` }}>
+        <EventRow event={events[vItem.index]} ... />
+      </div>
+    ))}
+  </div>
+</div>
+
+── desktop/src/components/EventDetail.tsx ───────────────────────────────────
+Right panel. Shows selected event or empty state ("← Select an event").
+
+Props: eventId: string | null
+
+- Fetch event from local store by id (useEventStore)
+- Use shadcn/ui Tabs: Params | Result | Risk | Raw
+- Params tab: CodeMirror 6 JSON viewer (read-only, one-dark theme)
+  Value: JSON.stringify(event.params, null, 2)
+- Result tab: same, for event.result
+- Risk tab: if risk_flags.length === 0 show "No risks detected"
+  Otherwise: list each RiskFlag with a colored badge matching riskBorder colors
+- Raw tab: <pre className="font-mono text-xs"> with raw JSON-RPC
+
+── desktop/src/components/TopBar.tsx ────────────────────────────────────────
+Props: none (reads from useEventStore)
+
+Layout: flex justify-between items-center h-12 px-4 border-b
+
+Left:  ⚡ Spektr  (bold, with lightning emoji)
+Center: event count · session cost total ($X.XXXX)
+Right:  connection dot — green pulse if connected, red if not
+        text: "Connected" / "Disconnected"
+
+── desktop/src/components/Sidebar.tsx ───────────────────────────────────────
+Props: events: MCPEvent[] (to derive unique server names)
+
+Sections:
+1. Servers — unique server names from events, checkbox per server,
+   clicking sets filters.server (null if deselecting current)
+   Each server name has its color dot (serverColor)
+
+2. Risk filter — radio: All | Medium+ | High+ | Critical only
+   Sets filters.riskLevel
+
+3. Search — <input> debounced 200ms, sets filters.search
+
+── desktop/src/App.tsx ──────────────────────────────────────────────────────
+import { useMemo } from 'react'
+import { useEventStore, applyFilters } from '@/stores/eventStore'
+import { useLiveEvents } from '@/hooks/useLiveEvents'
+import TopBar from '@/components/TopBar'
+import Sidebar from '@/components/Sidebar'
+import EventTimeline from '@/components/EventTimeline'
+import EventDetail from '@/components/EventDetail'
+
+export default function App() {
+  useLiveEvents()  // establish WebSocket connection at app root
+  const { events, filters, selectedId } = useEventStore()
+  const filtered = useMemo(() => applyFilters(events, filters), [events, filters])
+
+  return (
+    <div className="flex flex-col h-screen bg-white dark:bg-zinc-950">
+      <TopBar />
+      <div className="flex flex-1 overflow-hidden">
+        <aside className="w-[220px] flex-shrink-0 border-r overflow-y-auto">
+          <Sidebar events={events} />
+        </aside>
+        <main className="flex-1 overflow-hidden">
+          <EventTimeline events={filtered} />
+        </main>
+        <aside className="w-[380px] flex-shrink-0 border-l overflow-y-auto">
+          <EventDetail eventId={selectedId} />
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+After: cd desktop && npx tsc --noEmit
+Must produce zero TypeScript errors.
+Then: cd desktop && npm run build
+Must produce zero errors.
+```
+
+---
+
+### Task 7 — Smoke test end-to-end
+
+```
+Goal: prove the full chain works before touching Phase 2.
+
+1. Start the daemon manually:
+   echo '{"ws_port":48300,"socket_path":"/tmp/spektr.sock","db_path":"/tmp/test.spektr","log_level":"debug"}' \
+   | cd proxy && go run ./cmd/spektr
+
+   Expected stdout: {"event":"ready","ws_port":48300}
+
+2. In a second terminal, start the UI:
+   cd desktop && npm run dev
+   Open http://localhost:1420 — should show empty timeline, red "Disconnected" dot
+
+   Wait ~1s → dot turns green "Connected"
+
+3. In a third terminal, simulate MCP traffic through the proxy:
+   echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"write_file","arguments":{"path":"/tmp/test.txt","content":"hello"}}}' \
+   | cd proxy && go run ./cmd/spektr-proxy --server filesystem --socket /tmp/spektr.sock -- cat
+
+4. Expected result in UI:
+   - One row appears in the timeline within 200ms
+   - Server badge shows "filesystem" with a color
+   - Tool name shows "write_file" in bold
+   - Clicking the row shows the params in the Params tab
+
+5. git add -A && git commit -m "feat: phase 1 complete — live MCP interception"
+   git push origin main
+```
+
+---
+
+## Phase 2 — The Brain (4-5 weeks after Phase 1)
+
+### Task: Risk engine
+
+```
+Read docs/ARCHITECTURE.md — Risk levels table.
+Read proxy/pkg/types/event.go — RiskLevel, RiskFlag types.
+Read proxy/internal/pipeline/ — you will add risk.go here.
+
+Implement proxy/internal/pipeline/risk.go:
+
 type RiskRule struct {
     Name  string
     Level types.RiskLevel
@@ -226,91 +904,66 @@ type RiskRule struct {
     Check func(event *types.MCPEvent) bool
 }
 
-type RiskEngine struct { rules []RiskRule }
+type RiskEngine struct{ rules []RiskRule }
 
-func NewRiskEngine() *RiskEngine — returns engine with all default rules loaded
+func NewRiskEngine() *RiskEngine  — loads all default rules
 
 func (e *RiskEngine) Evaluate(event *types.MCPEvent) *types.MCPEvent
-  — runs all rules, sets event.RiskLevel (highest match), event.RiskFlags (all matches)
-  — returns event unchanged if no rules match
+  - Runs all rules, collects all matches as RiskFlags
+  - Sets RiskLevel to the highest matching level
+  - Returns event (modified in place)
 
-Default rules to implement (exact names matter for tests):
-Critical: shell-destructive-delete, shell-destructive-db, shell-format-disk, credential-file-write
-High: env-file-write, sensitive-file-read, file-delete, shell-sudo, git-force-push
-Medium: external-network-fetch, shell-command, large-file-write, package-install
-Low: env-var-read, file-write
+Helper constructors (unexported):
+  toolNameIs(names ...string) func(*types.MCPEvent) bool
+  toolArgContains(field string, subs ...string) func(*types.MCPEvent) bool
+  toolPathMatchesAny(field string, patterns ...string) func(*types.MCPEvent) bool
+  resourceURIMatchesAny(patterns ...string) func(*types.MCPEvent) bool
 
-Helper functions (unexported):
-- toolNameIs(names ...string) func(*types.MCPEvent) bool
-- toolArgContains(field string, subs ...string) func(*types.MCPEvent) bool
-- toolPathMatchesAny(field string, patterns ...string) func(*types.MCPEvent) bool
-- resourceURIMatchesAny(patterns ...string) func(*types.MCPEvent) bool
+Critical rules: shell-destructive-delete, shell-destructive-db, credential-file-write
+High rules: env-file-write, sensitive-file-read, file-delete, shell-sudo, git-force-push
+Medium rules: external-network-fetch, shell-command, large-file-write, package-install
+Low rules: env-var-read, file-write
 
-Write exhaustive table-driven tests covering every rule with both matching and non-matching events.
-Benchmark: BenchmarkRiskEngine must show < 1µs per event.
+Write proxy/internal/pipeline/risk_test.go:
+  Table-driven. Every rule gets a matching AND a non-matching test case.
+  Benchmark: BenchmarkRiskEngine — must show < 1µs per event.
+
+After: cd proxy && go test ./internal/pipeline/... -v -bench=. -count=1
 ```
 
 ---
 
-## Phase 3 — Power Features (6-8 weeks)
+## Agent orchestration
 
-### Claude Code prompt for session diff
+### Codex session rhythm
 ```
-Implement session diff: compare two .spektr session files.
-Read docs/ARCHITECTURE.md schema section for the events table structure.
-Read internal/storage/queries.go for existing query patterns.
-
-Implement GET /api/diff?a={session_id}&b={session_id}:
-- Group events by (server_name, method, tool_name) in both sessions
-- Compare: endpoints only in A, only in B, in both (with risk level changes)
-- Return DiffResult struct with: added[]EndpointSummary, removed[], changed[]EndpointDiff
-- EndpointSummary: server, method, tool_name, call_count, avg_duration_ms, risk_level
-- EndpointDiff: the above for both sessions, plus risk_changed bool
-
-React component: src/components/SessionDiff.tsx
-- Two-column layout: Session A (left) | Session B (right)
-- Color-coded rows: green=added, red=removed, yellow=changed risk
-- Sortable by call_count, avg_duration, risk_level
+cd ~/spektr
+codex                            # always launch from repo root
 ```
 
----
+**One task per session.** Paste the task prompt after Codex has indexed the repo.
+When it asks for file permission mode: choose "Edit files".
 
-## Agent orchestration strategy
+**Focused task examples:**
+```bash
+codex "implement proxy/internal/storage/event.go — the event CRUD functions.
+Read AGENTS.md and proxy/internal/storage/db.go first."
 
-### How to use Claude Code + Codex together
-
-**Claude Code** (your primary agent):
-- Architecture decisions, complex logic, pipeline code, type design
-- Use `/agents` to spawn subagents from `.claude/agents/` for focused work
-- Run with `--dangerously-skip-permissions` only in isolated dev environment
-
-**Codex CLI**:
-- Boilerplate generation, test writing, repetitive CRUD, Tailwind styling
-- Point at specific files: `codex "implement the ListEvents query in internal/storage/queries.go"`
-- Best for tasks with clear input/output with no architectural judgment
-
-### Session rhythm (how to work)
-```
-1. Morning: open Claude Code session, run /init
-2. Pick ONE phase item from the implementation order list
-3. Share the relevant prompt from PHASES.md with the agent
-4. Agent implements → you review hot-path changes manually
-5. Run make test before committing
-6. Commit with conventional commits: feat(proxy): implement pipeline parser
-7. End of day: ask Claude "summarize what changed and any decisions made"
-   → append to docs/DECISIONS.md
-8. Close session (context doesn't carry over — this is by design)
+codex "implement desktop/src/components/EventTimeline.tsx using TanStack Virtual.
+Read AGENTS.md React rules first."
 ```
 
-### Context window management
-- At 70% context: `/compact`
-- At 85%: open new session, paste the relevant prompt fresh
-- Never let context hit 90% — quality degrades sharply
-- Keep sessions focused: one session = one package or one feature
+### What to review manually (never trust Codex blindly)
+- `proxy/cmd/spektr-proxy/main.go` goroutines A and B: must contain ONLY scan + report + write
+- Any file that touches SQLite: must use the write channel, never direct writes
+- Any new Go dependency: reject if it's a web framework, use stdlib
+- TypeScript: no `any`, no `localStorage`, no `useEffect` for data fetching
 
-### Red flags to watch for
-- Agent adds `github.com/gin-gonic/gin` → reject, use stdlib
-- Agent writes to SQLite from proxy goroutine → reject, use write channel
-- Agent uses `mattn/go-sqlite3` → reject, use modernc
-- Agent makes WebSocket connection blocking → reject, use non-blocking hub
-- Agent puts business logic in `pkg/types` → reject, types only
+### Commit format
+```
+feat(proxy): implement storage event queries
+feat(ui): implement virtualized event timeline
+fix(proxy): prevent blocking write in proxy goroutine B
+test(pipeline): add risk engine benchmark
+docs: update ARCHITECTURE with session replay API
+```
