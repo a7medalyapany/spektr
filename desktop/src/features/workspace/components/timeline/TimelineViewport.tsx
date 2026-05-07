@@ -3,6 +3,7 @@ import { ArrowDown, Orbit, RadioTower } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { cn } from "../../../../lib/cn";
+import { useTimelineSelectionNavigation } from "../../hooks/useTimelineSelectionNavigation";
 import { TimelineEventRow, TIMELINE_ROW_HEIGHT } from "./TimelineEventRow";
 
 const OVERSCAN_ROWS = 12;
@@ -32,6 +33,11 @@ export function TimelineViewport({ eventIds }: TimelineViewportProps) {
     getItemKey: (index) => eventIds[index] ?? index,
     getScrollElement: () => scrollElementRef.current,
     overscan: OVERSCAN_ROWS,
+  });
+  const { onKeyDown, onPointerDownCapture } = useTimelineSelectionNavigation({
+    eventIds,
+    scrollElementRef,
+    rowVirtualizer,
   });
 
   const syncFollowState = useEffectEvent((nextState: boolean) => {
@@ -128,8 +134,12 @@ export function TimelineViewport({ eventIds }: TimelineViewportProps) {
 
       <div className="relative min-h-0 flex-1">
         <div
-          className="absolute inset-0 overflow-y-auto overflow-x-hidden px-2 py-2 [scrollbar-gutter:stable]"
+          className="absolute inset-0 overflow-y-auto overflow-x-hidden px-2 py-2 outline-none [scrollbar-gutter:stable] focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
+          onKeyDown={onKeyDown}
+          onPointerDownCapture={onPointerDownCapture}
+          role="listbox"
           ref={scrollElementRef}
+          tabIndex={0}
         >
           <div
             className="relative w-full"

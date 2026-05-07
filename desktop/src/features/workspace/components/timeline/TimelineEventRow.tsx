@@ -1,7 +1,10 @@
 import { memo, useRef } from "react";
 
 import { cn } from "../../../../lib/cn";
-import { makeEventByIdSelector } from "../../../../stores/event-selectors";
+import {
+  makeEventByIdSelector,
+  makeIsEventSelectedSelector,
+} from "../../../../stores/event-selectors";
 import { useEventStore } from "../../../../stores/event-store";
 import type { EventDirection, RiskLevel } from "../../../../types/events";
 
@@ -77,12 +80,16 @@ export const TimelineEventRow = memo(function TimelineEventRow({
   eventId,
 }: TimelineEventRowProps) {
   const eventSelectorRef = useRef<ReturnType<typeof makeEventByIdSelector> | null>(null);
+  const isSelectedSelectorRef = useRef<ReturnType<typeof makeIsEventSelectedSelector> | null>(null);
   if (eventSelectorRef.current === null) {
     eventSelectorRef.current = makeEventByIdSelector(eventId);
   }
+  if (isSelectedSelectorRef.current === null) {
+    isSelectedSelectorRef.current = makeIsEventSelectedSelector(eventId);
+  }
 
   const event = useEventStore(eventSelectorRef.current);
-  const isSelected = useEventStore((state) => state.selectedEventId === eventId);
+  const isSelected = useEventStore(isSelectedSelectorRef.current);
   const selectEvent = useEventStore((state) => state.actions.selection.selectEvent);
 
   if (!event) {
@@ -94,7 +101,7 @@ export const TimelineEventRow = memo(function TimelineEventRow({
 
   return (
     <button
-      aria-pressed={isSelected}
+      aria-selected={isSelected}
       className={cn(
         "group h-[58px] w-full rounded-[18px] border px-3 text-left transition-colors outline-none",
         "border-white/[0.06] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.02))]",
@@ -105,6 +112,11 @@ export const TimelineEventRow = memo(function TimelineEventRow({
       onClick={() => {
         selectEvent(eventId);
       }}
+      onMouseDown={(event) => {
+        event.preventDefault();
+      }}
+      role="option"
+      tabIndex={-1}
       type="button"
     >
       <div className="grid h-full grid-cols-[96px_88px_minmax(0,1fr)_64px_76px_78px] items-center gap-3">

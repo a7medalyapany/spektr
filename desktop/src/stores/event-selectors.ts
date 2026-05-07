@@ -69,6 +69,10 @@ export function makeEventByIdSelector(eventId: string) {
   return (state: EventStoreState): MCPEvent | null => state.eventsById.get(eventId) ?? null;
 }
 
+export function makeIsEventSelectedSelector(eventId: string) {
+  return (state: EventStoreState): boolean => state.selectedEventId === eventId;
+}
+
 export function makeFilteredTimelineIdsSelector() {
   let previousIds = EMPTY_EVENT_IDS;
   let previousEventsVersion = -1;
