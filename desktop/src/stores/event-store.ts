@@ -10,7 +10,7 @@ import {
   normalizeMCPEvent,
 } from "../types/events";
 
-export const EVENT_RING_BUFFER_CAPACITY = 5_000;
+export const EVENT_RING_BUFFER_CAPACITY = 10_000;
 
 export type ConnectionStatus =
   | "idle"
@@ -56,7 +56,8 @@ interface EventRingState {
 }
 
 export interface EventStoreState {
-  eventsById: Record<string, MCPEvent>;
+  eventsById: ReadonlyMap<string, MCPEvent>;
+  eventsVersion: number;
   ring: EventRingState;
   selectedEventId: string | null;
   filters: EventFilters;
@@ -258,11 +259,11 @@ function appendIdsToRing(
 
 function buildStateFromEvents(
   events: ReadonlyArray<IncomingMCPEvent>,
-): Pick<EventStoreState, "eventsById" | "ring" | "stats" | "selectedEventId"> {
+): Pick<EventStoreState, "eventsById" | "eventsVersion" | "ring" | "stats" | "selectedEventId"> {
   const normalizedEvents = events.map(normalizeMCPEvent);
   const ring = createEmptyRingState();
   const stats = cloneStats(createEmptyStats());
-  const eventsById: Record<string, MCPEvent> = {};
+  const eventsById = new Map<string, MCPEvent>();
 
   const dedupedEvents = new Map<string, MCPEvent>();
   for (const event of normalizedEvents) {
@@ -274,7 +275,7 @@ function buildStateFromEvents(
   const appendResult = appendIdsToRing(ring, trimmedEvents.map((event) => event.id));
 
   for (const event of trimmedEvents) {
-    eventsById[event.id] = event;
+    eventsById.set(event.id, event);
     incrementEventStats(stats, event);
     stats.lastEventAt = event.timestamp;
   }
@@ -285,6 +286,7 @@ function buildStateFromEvents(
 
   return {
     eventsById,
+    eventsVersion: normalizedEvents.length,
     ring: appendResult.nextRing,
     stats,
     selectedEventId: null,
@@ -294,25 +296,25 @@ function buildStateFromEvents(
 function ingestIncomingEvents(
   state: EventStoreState,
   incomingEvents: ReadonlyArray<IncomingMCPEvent>,
-): Pick<EventStoreState, "eventsById" | "ring" | "stats" | "selectedEventId"> | null {
+): Pick<EventStoreState, "eventsById" | "eventsVersion" | "ring" | "stats" | "selectedEventId"> | null {
   if (incomingEvents.length === 0) {
     return null;
   }
 
   const events = incomingEvents.map(normalizeMCPEvent);
-  const eventsById = { ...state.eventsById };
+  const eventsById = new Map(state.eventsById);
   const stats = cloneStats(state.stats);
   const idsToAppend: string[] = [];
 
   for (const event of events) {
-    const previous = eventsById[event.id];
+    const previous = eventsById.get(event.id);
     if (previous) {
       decrementEventStats(stats, previous);
     } else {
       idsToAppend.push(event.id);
     }
 
-    eventsById[event.id] = event;
+    eventsById.set(event.id, event);
     incrementEventStats(stats, event);
     stats.lastEventAt = event.timestamp;
   }
@@ -320,13 +322,13 @@ function ingestIncomingEvents(
   const { nextRing, evictedIds } = appendIdsToRing(state.ring, idsToAppend);
 
   for (const evictedId of evictedIds) {
-    const evictedEvent = eventsById[evictedId];
+    const evictedEvent = eventsById.get(evictedId);
     if (!evictedEvent) {
       continue;
     }
 
     decrementEventStats(stats, evictedEvent);
-    delete eventsById[evictedId];
+    eventsById.delete(evictedId);
   }
 
   stats.totalReceived += events.length;
@@ -334,10 +336,11 @@ function ingestIncomingEvents(
   stats.bufferedEvents = nextRing.size;
 
   const selectedEventId =
-    state.selectedEventId && eventsById[state.selectedEventId] ? state.selectedEventId : null;
+    state.selectedEventId && eventsById.has(state.selectedEventId) ? state.selectedEventId : null;
 
   return {
     eventsById,
+    eventsVersion: state.eventsVersion + events.length,
     ring: nextRing,
     stats,
     selectedEventId,
@@ -346,7 +349,8 @@ function ingestIncomingEvents(
 
 export const useEventStore = create<EventStoreState>()(
   subscribeWithSelector((set) => ({
-    eventsById: {},
+    eventsById: new Map<string, MCPEvent>(),
+    eventsVersion: 0,
     ring: createEmptyRingState(),
     selectedEventId: null,
     filters: createDefaultFilters(),
@@ -399,7 +403,8 @@ export const useEventStore = create<EventStoreState>()(
         clear: () => {
           set((state) => ({
             ...state,
-            eventsById: {},
+            eventsById: new Map<string, MCPEvent>(),
+            eventsVersion: 0,
             ring: createEmptyRingState(),
             stats: createEmptyStats(),
             selectedEventId: null,
@@ -409,7 +414,7 @@ export const useEventStore = create<EventStoreState>()(
       selection: {
         selectEvent: (eventId) => {
           set((state) => ({
-            selectedEventId: eventId && state.eventsById[eventId] ? eventId : null,
+            selectedEventId: eventId && state.eventsById.has(eventId) ? eventId : null,
           }));
         },
         clearSelection: () => {

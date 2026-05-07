@@ -1,73 +1,134 @@
-import { AlignJustify, Clock3, Rows3, Waypoints } from "lucide-react";
+import { Activity, CircleDotDashed, DatabaseZap, ShieldAlert } from "lucide-react";
+import { useRef } from "react";
+import type { ReactNode } from "react";
 
 import { PanelCard } from "../../../components/layout/PanelCard";
-import { PanelListItem } from "./PanelList";
+import { makeFilteredTimelineIdsSelector } from "../../../stores/event-selectors";
+import { useEventStore } from "../../../stores/event-store";
+import { cn } from "../../../lib/cn";
+import { TimelineViewport } from "./timeline/TimelineViewport";
 
-const TIMELINE_SECTIONS = [
-  {
-    label: "Event stream viewport",
-    value: "Reserved for virtualized rows",
-    hint: "The center panel is intentionally the largest surface because live traffic density will dominate the UI.",
-    icon: <Rows3 className="h-4 w-4" strokeWidth={1.8} />,
-  },
-  {
-    label: "Header utilities",
-    value: "Search, method filters, session scope",
-    hint: "Toolbar space exists now so controls can be added later without changing the container contract.",
-    icon: <AlignJustify className="h-4 w-4" strokeWidth={1.8} />,
-  },
-  {
-    label: "Temporal context",
-    value: "Chronological by default",
-    hint: "Event grouping, correlation, and jump-to-response actions can layer in without replacing the shell.",
-    icon: <Clock3 className="h-4 w-4" strokeWidth={1.8} />,
-  },
-];
+const STATUS_STYLES = {
+  connected: "border-emerald-400/16 bg-emerald-400/12 text-emerald-100",
+  connecting: "border-sky-400/16 bg-sky-400/12 text-sky-100",
+  disconnected: "border-white/10 bg-white/[0.04] text-[var(--text-secondary)]",
+  error: "border-rose-400/18 bg-rose-400/14 text-rose-100",
+  idle: "border-white/10 bg-white/[0.04] text-[var(--text-secondary)]",
+} as const;
+
+const COUNT_FORMATTER = new Intl.NumberFormat("en-US");
+
+function formatCount(value: number): string {
+  return COUNT_FORMATTER.format(value);
+}
+
+function formatRelativeTimestamp(timestamp: string | null): string {
+  if (!timestamp) {
+    return "No traffic yet";
+  }
+
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) {
+    return timestamp;
+  }
+
+  return parsed.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+interface TimelineMetricProps {
+  icon: ReactNode;
+  label: string;
+  value: string;
+}
+
+function TimelineMetric({ icon, label, value }: TimelineMetricProps) {
+  return (
+    <div className="rounded-[18px] border border-white/8 bg-white/[0.03] px-3 py-2.5">
+      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
+        <span className="text-[var(--accent)]">{icon}</span>
+        {label}
+      </div>
+      <p className="mt-2 text-[14px] font-medium tracking-[0.01em] text-[var(--text-primary)]">
+        {value}
+      </p>
+    </div>
+  );
+}
 
 export function TimelinePanel() {
+  const filteredIdsSelectorRef = useRef<ReturnType<typeof makeFilteredTimelineIdsSelector> | null>(
+    null,
+  );
+  if (filteredIdsSelectorRef.current === null) {
+    filteredIdsSelectorRef.current = makeFilteredTimelineIdsSelector();
+  }
+
+  const eventIds = useEventStore(filteredIdsSelectorRef.current);
+  const connectionStatus = useEventStore((state) => state.connection.status);
+  const totalReceived = useEventStore((state) => state.stats.totalReceived);
+  const bufferedEvents = useEventStore((state) => state.stats.bufferedEvents);
+  const droppedEvents = useEventStore((state) => state.stats.droppedEvents);
+  const highRiskCount = useEventStore(
+    (state) => state.stats.riskCounts.high + state.stats.riskCounts.critical,
+  );
+  const lastEventAt = useEventStore((state) => state.stats.lastEventAt);
+
   return (
     <PanelCard
-      description="Primary analysis surface for MCP traffic. This stays neutral until live data and virtualization land."
+      actions={
+        <span
+          className={cn(
+            "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em]",
+            STATUS_STYLES[connectionStatus],
+          )}
+        >
+          <CircleDotDashed className="h-3.5 w-3.5" strokeWidth={1.8} />
+          {connectionStatus}
+        </span>
+      }
+      contentClassName="gap-3"
+      description="Virtualized realtime MCP traffic tuned for dense streaming analysis and fast inspection."
       eyebrow="Timeline"
       title="Event Timeline"
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-3">
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.8fr)]">
-          <div className="rounded-[20px] border border-[var(--panel-border-strong)] bg-[var(--panel-bg-strong)] p-4">
-            <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
-              <Waypoints className="h-3.5 w-3.5" strokeWidth={1.8} />
-              Core viewport
-            </div>
-            <div className="mt-4 grid gap-2">
-              {Array.from({ length: 7 }, (_, index) => (
-                <div
-                  className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3"
-                  key={index}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[12px] font-medium text-[var(--text-primary)]">
-                        Placeholder event row
-                      </p>
-                      <p className="mt-1 text-[12px] text-[var(--text-secondary)]">
-                        Final implementation will mount virtualized timeline entries here.
-                      </p>
-                    </div>
-                    <span className="rounded-full border border-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
-                      row {index + 1}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="grid gap-3">
-            {TIMELINE_SECTIONS.map((section) => (
-              <PanelListItem key={section.label} {...section} />
-            ))}
-          </div>
-        </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <TimelineMetric
+          icon={<DatabaseZap className="h-3.5 w-3.5" strokeWidth={1.8} />}
+          label="Buffered"
+          value={`${formatCount(eventIds.length)} visible`}
+        />
+        <TimelineMetric
+          icon={<Activity className="h-3.5 w-3.5" strokeWidth={1.8} />}
+          label="Ingress"
+          value={`${formatCount(totalReceived)} received`}
+        />
+        <TimelineMetric
+          icon={<ShieldAlert className="h-3.5 w-3.5" strokeWidth={1.8} />}
+          label="High Risk"
+          value={`${formatCount(highRiskCount)} flagged`}
+        />
+        <TimelineMetric
+          icon={<CircleDotDashed className="h-3.5 w-3.5" strokeWidth={1.8} />}
+          label="Latest"
+          value={formatRelativeTimestamp(lastEventAt)}
+        />
       </div>
+
+      <div className="flex items-center justify-between gap-3 rounded-[18px] border border-white/8 bg-white/[0.03] px-3 py-2">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+          Viewport: {formatCount(eventIds.length)} visible / {formatCount(bufferedEvents)} buffered
+        </p>
+        <p className="font-mono text-[11px] text-[var(--text-secondary)]">
+          Received: {formatCount(totalReceived)} · Dropped: {formatCount(droppedEvents)}
+        </p>
+      </div>
+
+      <TimelineViewport eventIds={eventIds} />
     </PanelCard>
   );
 }

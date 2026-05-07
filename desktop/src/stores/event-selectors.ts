@@ -54,30 +54,31 @@ export const eventStoreSelectors = {
   actions: (state: EventStoreState) => state.actions,
   connection: (state: EventStoreState) => state.connection,
   connectionStatus: (state: EventStoreState) => state.connection.status,
+  eventsVersion: (state: EventStoreState) => state.eventsVersion,
   filters: (state: EventStoreState) => state.filters,
   hasActiveFilters: (state: EventStoreState) => hasActiveFilters(state.filters),
   ringVersion: (state: EventStoreState) => state.ring.version,
   selectedEventId: (state: EventStoreState) => state.selectedEventId,
   selectedEvent: (state: EventStoreState) =>
-    state.selectedEventId ? state.eventsById[state.selectedEventId] ?? null : null,
+    state.selectedEventId ? state.eventsById.get(state.selectedEventId) ?? null : null,
   stats: (state: EventStoreState) => state.stats,
   timelineIds: (state: EventStoreState) => state.ring.ids,
 } as const;
 
 export function makeEventByIdSelector(eventId: string) {
-  return (state: EventStoreState): MCPEvent | null => state.eventsById[eventId] ?? null;
+  return (state: EventStoreState): MCPEvent | null => state.eventsById.get(eventId) ?? null;
 }
 
 export function makeFilteredTimelineIdsSelector() {
   let previousIds = EMPTY_EVENT_IDS;
-  let previousEventsById: EventStoreState["eventsById"] | null = null;
+  let previousEventsVersion = -1;
   let previousFilters: EventStoreState["filters"] | null = null;
   let previousResult = EMPTY_EVENT_IDS;
 
   return (state: EventStoreState): ReadonlyArray<string> => {
     if (
       previousIds === state.ring.ids &&
-      previousEventsById === state.eventsById &&
+      previousEventsVersion === state.eventsVersion &&
       previousFilters === state.filters
     ) {
       return previousResult;
@@ -85,13 +86,13 @@ export function makeFilteredTimelineIdsSelector() {
 
     const nextResult = hasActiveFilters(state.filters)
       ? state.ring.ids.filter((id) => {
-          const event = state.eventsById[id];
+          const event = state.eventsById.get(id);
           return event ? eventMatchesFilters(event, state.filters) : false;
         })
       : state.ring.ids;
 
     previousIds = state.ring.ids;
-    previousEventsById = state.eventsById;
+    previousEventsVersion = state.eventsVersion;
     previousFilters = state.filters;
     previousResult = nextResult;
 
