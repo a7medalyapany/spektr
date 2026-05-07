@@ -1,24 +1,28 @@
 import { useEffect, useEffectEvent, useRef } from "react";
 
+import {
+  type LiveEventsClientState,
+  liveEventsClient,
+} from "../lib/live-events-client";
 import { eventStoreSelectors } from "../stores/event-selectors";
 import { useEventStore } from "../stores/event-store";
-import type { BackendMCPEvent } from "../types/events";
-
-const DEFAULT_LIVE_EVENTS_URL = "ws://localhost:48300/api/events/live";
+import type { MCPEvent } from "../types/events";
 
 export interface UseLiveEventsOptions {
   enabled?: boolean;
   flushIntervalMs?: number;
+  maxBatchSize?: number;
   url?: string;
 }
 
 export function useLiveEvents({
   enabled = true,
   flushIntervalMs = 16,
-  url = DEFAULT_LIVE_EVENTS_URL,
+  maxBatchSize = 200,
+  url,
 }: UseLiveEventsOptions = {}): void {
   const actions = useEventStore(eventStoreSelectors.actions);
-  const bufferRef = useRef<BackendMCPEvent[]>([]);
+  const bufferRef = useRef<MCPEvent[]>([]);
   const flushTimerRef = useRef<number | null>(null);
 
   const flushBuffer = useEffectEvent(() => {
@@ -30,8 +34,17 @@ export function useLiveEvents({
     bufferRef.current = [];
 
     actions.events.ingestEvents(events, {
-      receivedAt: events[events.length - 1]?.timestamp,
+      receivedAt: new Date().toISOString(),
     });
+  });
+
+  const clearFlushTimer = useEffectEvent(() => {
+    if (flushTimerRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = null;
   });
 
   const scheduleFlush = useEffectEvent(() => {
@@ -45,55 +58,68 @@ export function useLiveEvents({
     }, flushIntervalMs);
   });
 
+  const handleStateChange = useEffectEvent((state: LiveEventsClientState) => {
+    switch (state.status) {
+      case "idle":
+        actions.connection.reset();
+        break;
+      case "connecting":
+        actions.connection.setConnecting(state.reconnectAttempt);
+        break;
+      case "connected":
+        actions.connection.setConnected();
+        break;
+      case "disconnected":
+        actions.connection.setDisconnected(state.lastError);
+        break;
+      case "error":
+        actions.connection.setError(state.lastError ?? "live event websocket error");
+        break;
+    }
+  });
+
+  const handleEvent = useEffectEvent((event: MCPEvent) => {
+    bufferRef.current.push(event);
+
+    if (bufferRef.current.length >= maxBatchSize) {
+      clearFlushTimer();
+      flushBuffer();
+      return;
+    }
+
+    scheduleFlush();
+  });
+
   useEffect(() => {
     if (!enabled) {
+      clearFlushTimer();
+      bufferRef.current = [];
       actions.connection.reset();
       return undefined;
     }
 
-    actions.connection.setConnecting();
-
-    const socket = new WebSocket(url);
-
-    socket.addEventListener("open", () => {
-      actions.connection.setConnected();
+    const unsubscribe = liveEventsClient.subscribe({
+      onEvent: handleEvent,
+      onStateChange: handleStateChange,
     });
 
-    socket.addEventListener("message", (message) => {
-      try {
-        if (typeof message.data !== "string") {
-          actions.connection.setError("live event websocket message was not text");
-          return;
-        }
-
-        const event = JSON.parse(message.data) as BackendMCPEvent;
-        bufferRef.current.push(event);
-        scheduleFlush();
-      } catch (error) {
-        const messageText =
-          error instanceof Error ? error.message : "failed to parse live event message";
-        actions.connection.setError(messageText);
-      }
-    });
-
-    socket.addEventListener("close", () => {
-      flushBuffer();
-      actions.connection.setDisconnected();
-    });
-
-    socket.addEventListener("error", () => {
-      actions.connection.setError("live event websocket error");
-    });
+    liveEventsClient.retain({ url });
 
     return () => {
-      if (flushTimerRef.current !== null) {
-        window.clearTimeout(flushTimerRef.current);
-        flushTimerRef.current = null;
-      }
-
+      unsubscribe();
+      clearFlushTimer();
       flushBuffer();
-      socket.close();
-      actions.connection.setDisconnected();
+      liveEventsClient.release();
     };
-  }, [actions, enabled, url]);
+  }, [
+    actions.connection,
+    clearFlushTimer,
+    enabled,
+    flushBuffer,
+    handleEvent,
+    handleStateChange,
+    maxBatchSize,
+    scheduleFlush,
+    url,
+  ]);
 }
