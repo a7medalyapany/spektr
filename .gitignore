@@ -13,3 +13,6 @@ desktop/dist/
 .idea/
 *.swp
 .DS_Store
+
+# Spektr session summary
+docs/SPEKTR_SESSION_SUMMARY.md
