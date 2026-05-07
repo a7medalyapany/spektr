@@ -128,3 +128,41 @@ func (s *Store) CloseSession(ctx context.Context, id string) error {
 
 	return nil
 }
+
+func (s *Store) DeleteSession(ctx context.Context, id string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete session %s: %w", id, err)
+	}
+
+	result, err := tx.ExecContext(ctx, `DELETE FROM events WHERE session_id = ?`, id)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete events for session %s: %w", id, err)
+	}
+	if _, err := result.RowsAffected(); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("count deleted events for session %s: %w", id, err)
+	}
+
+	result, err = tx.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("delete session %s: %w", id, err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("count deleted sessions for %s: %w", id, err)
+	}
+	if rows == 0 {
+		_ = tx.Rollback()
+		return sql.ErrNoRows
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete session %s: %w", id, err)
+	}
+
+	return nil
+}
