@@ -1,4 +1,4 @@
-.PHONY: dev build test proxy-build proxy-test ui-check clean
+.PHONY: dev build test proxy-build proxy-test ui-check ui-test clean
 
 PROXY_DIR   := proxy
 DESKTOP_DIR := desktop
@@ -25,7 +25,10 @@ proxy-lint:
 ui-check:
 	cd $(DESKTOP_DIR) && npx tsc --noEmit
 
-test: proxy-test ui-check
+ui-test:
+	cd $(DESKTOP_DIR) && npm run test
+
+test: proxy-test ui-check ui-test
 
 build: proxy-build
 	cd $(DESKTOP_DIR) && npm run tauri build
