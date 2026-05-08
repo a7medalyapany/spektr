@@ -58,13 +58,10 @@ func main() {
 
 	var wg sync.WaitGroup
 	wg.Add(2)
-	agentToServerDone := make(chan struct{})
-	serverToAgentDone := make(chan struct{})
 
 	go func() {
 		defer wg.Done()
 		defer cancel()
-		defer close(agentToServerDone)
 
 		scanner := bufio.NewScanner(os.Stdin)
 		for scanner.Scan() {
@@ -82,7 +79,6 @@ func main() {
 	go func() {
 		defer wg.Done()
 		defer cancel()
-		defer close(serverToAgentDone)
 
 		scanner := bufio.NewScanner(serverOut)
 		for scanner.Scan() {
@@ -99,16 +95,6 @@ func main() {
 
 	go func() {
 		<-ctx.Done()
-		select {
-		case <-agentToServerDone:
-			_ = serverIn.Close()
-			select {
-			case <-serverToAgentDone:
-				return
-			case <-time.After(10 * time.Millisecond):
-			}
-		default:
-		}
 		if cmd.Process != nil {
 			_ = cmd.Process.Signal(os.Interrupt)
 		}
