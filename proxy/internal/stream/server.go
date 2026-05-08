@@ -115,6 +115,15 @@ func (s *Server) handleGetSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.store.GetSession(r.Context(), r.PathValue("id")); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "session not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to get session")
+		return
+	}
+
 	events, err := s.store.ListEvents(r.Context(), storage.ListEventsOpts{
 		SessionID: r.PathValue("id"),
 		Server:    r.URL.Query().Get("server"),
@@ -247,7 +256,7 @@ func (c *Client) writePump() {
 
 func isAllowedOrigin(origin string) bool {
 	if origin == "" {
-		return false
+		return true
 	}
 	if origin == "http://localhost:1420" || origin == "tauri://localhost" {
 		return true
