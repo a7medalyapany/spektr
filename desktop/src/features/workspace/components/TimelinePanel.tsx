@@ -1,6 +1,5 @@
-import { Activity, CircleDotDashed, DatabaseZap, ShieldAlert } from "lucide-react";
+import { CircleDotDashed } from "lucide-react";
 import { useRef } from "react";
-import type { ReactNode } from "react";
 
 import { PanelCard } from "../../../components/layout/PanelCard";
 import { makeFilteredTimelineIdsSelector } from "../../../stores/event-selectors";
@@ -40,29 +39,11 @@ function formatRelativeTimestamp(timestamp: string | null): string {
   });
 }
 
-interface TimelineMetricProps {
-  icon: ReactNode;
-  label: string;
-  value: string;
+interface TimelinePanelProps {
+  compact?: boolean;
 }
 
-function TimelineMetric({ icon, label, value }: TimelineMetricProps) {
-  return (
-    <div className="rounded-[var(--radius-subpanel)] border border-[var(--panel-border)] bg-[var(--surface-muted)] px-3.5 py-3">
-      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-quaternary)]">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[var(--accent)]">
-          {icon}
-        </span>
-        {label}
-      </div>
-      <p className="mt-2 text-[14px] font-semibold tracking-[0.01em] text-[var(--text-primary)]">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-export function TimelinePanel() {
+export function TimelinePanel({ compact = false }: TimelinePanelProps) {
   const filteredIdsSelectorRef = useRef<ReturnType<typeof makeFilteredTimelineIdsSelector> | null>(
     null,
   );
@@ -93,44 +74,32 @@ export function TimelinePanel() {
           {connectionStatus}
         </span>
       }
-      contentClassName="gap-2.5"
-      description="Virtualized live MCP traffic optimized for dense scanning and low-latency inspection."
+      contentClassName="gap-1.5"
+      description="Dense, virtualized live MCP traffic optimized for fast scanning."
       eyebrow="Live Stream"
       title="Timeline"
     >
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <TimelineMetric
-          icon={<DatabaseZap className="h-3.5 w-3.5" strokeWidth={1.8} />}
-          label="Buffered"
-          value={`${formatCount(eventIds.length)} visible`}
-        />
-        <TimelineMetric
-          icon={<Activity className="h-3.5 w-3.5" strokeWidth={1.8} />}
-          label="Ingress"
-          value={`${formatCount(totalReceived)} received`}
-        />
-        <TimelineMetric
-          icon={<ShieldAlert className="h-3.5 w-3.5" strokeWidth={1.8} />}
-          label="High Risk"
-          value={`${formatCount(highRiskCount)} flagged`}
-        />
-        <TimelineMetric
-          icon={<CircleDotDashed className="h-3.5 w-3.5" strokeWidth={1.8} />}
-          label="Latest"
-          value={formatRelativeTimestamp(lastEventAt)}
-        />
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-[var(--radius-subpanel)] border border-white/[0.06] bg-black/[0.16] px-2.5 py-1.5">
+        <p className="text-[10px] text-[var(--text-secondary)]">
+          <span className="text-[var(--text-primary)]">{formatCount(eventIds.length)}</span> visible
+        </p>
+        <p className="text-[10px] text-[var(--text-secondary)]">
+          <span className="text-[var(--text-primary)]">{formatCount(bufferedEvents)}</span> buffered
+        </p>
+        <p className="text-[10px] text-[var(--text-secondary)]">
+          <span className="text-[var(--text-primary)]">{formatCount(totalReceived)}</span> received
+        </p>
+        <p className="text-[10px] text-[var(--text-secondary)]">
+          <span className="text-amber-300">{formatCount(highRiskCount)}</span> high risk
+        </p>
+        <div className="ml-auto flex items-center gap-2 text-[10px] text-[var(--text-tertiary)]">
+          <CircleDotDashed className="h-3 w-3" strokeWidth={1.8} />
+          Latest {formatRelativeTimestamp(lastEventAt)}
+          <span className="text-[var(--text-secondary)]">Dropped {formatCount(droppedEvents)}</span>
+        </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3 rounded-[var(--radius-subpanel)] border border-[var(--panel-border)] bg-[var(--surface-muted)] px-3.5 py-2">
-        <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
-          Viewport: {formatCount(eventIds.length)} visible / {formatCount(bufferedEvents)} buffered
-        </p>
-        <p className="font-mono text-[11px] text-[var(--text-secondary)]">
-          Received: {formatCount(totalReceived)} · Dropped: {formatCount(droppedEvents)}
-        </p>
-      </div>
-
-      <TimelineViewport eventIds={eventIds} />
+      <TimelineViewport compact={compact} eventIds={eventIds} />
     </PanelCard>
   );
 }
