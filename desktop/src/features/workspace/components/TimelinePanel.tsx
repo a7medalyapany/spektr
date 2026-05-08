@@ -48,12 +48,14 @@ interface TimelineMetricProps {
 
 function TimelineMetric({ icon, label, value }: TimelineMetricProps) {
   return (
-    <div className="rounded-[18px] border border-white/8 bg-white/[0.03] px-3 py-2.5">
-      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
-        <span className="text-[var(--accent)]">{icon}</span>
+    <div className="rounded-[var(--radius-subpanel)] border border-[var(--panel-border)] bg-[var(--surface-muted)] px-3.5 py-3">
+      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-quaternary)]">
+        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[var(--accent)]">
+          {icon}
+        </span>
         {label}
       </div>
-      <p className="mt-2 text-[14px] font-medium tracking-[0.01em] text-[var(--text-primary)]">
+      <p className="mt-2 text-[14px] font-semibold tracking-[0.01em] text-[var(--text-primary)]">
         {value}
       </p>
     </div>
@@ -83,7 +85,7 @@ export function TimelinePanel() {
       actions={
         <span
           className={cn(
-            "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em]",
+            "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]",
             STATUS_STYLES[connectionStatus],
           )}
         >
@@ -91,10 +93,10 @@ export function TimelinePanel() {
           {connectionStatus}
         </span>
       }
-      contentClassName="gap-3"
-      description="Virtualized realtime MCP traffic tuned for dense streaming analysis and fast inspection."
-      eyebrow="Timeline"
-      title="Event Timeline"
+      contentClassName="gap-2.5"
+      description="Virtualized live MCP traffic optimized for dense scanning and low-latency inspection."
+      eyebrow="Live Stream"
+      title="Timeline"
     >
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <TimelineMetric
@@ -119,8 +121,8 @@ export function TimelinePanel() {
         />
       </div>
 
-      <div className="flex items-center justify-between gap-3 rounded-[18px] border border-white/8 bg-white/[0.03] px-3 py-2">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+      <div className="flex items-center justify-between gap-3 rounded-[var(--radius-subpanel)] border border-[var(--panel-border)] bg-[var(--surface-muted)] px-3.5 py-2">
+        <p className="text-[11px] uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
           Viewport: {formatCount(eventIds.length)} visible / {formatCount(bufferedEvents)} buffered
         </p>
         <p className="font-mono text-[11px] text-[var(--text-secondary)]">

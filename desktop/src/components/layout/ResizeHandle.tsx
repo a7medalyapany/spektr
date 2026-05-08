@@ -15,8 +15,8 @@ export function ResizeHandle({ className }: ResizeHandleProps) {
         className,
       )}
     >
-      <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-[var(--handle)] transition-none group-hover:bg-[var(--handle-active)]" />
-      <div className="relative rounded-full border border-white/10 bg-white/6 p-1 text-[var(--text-tertiary)] backdrop-blur-xl">
+      <div className="absolute inset-y-3 left-1/2 w-px -translate-x-1/2 rounded-full bg-[var(--handle)] transition-none group-hover:bg-[var(--handle-active)]" />
+      <div className="relative rounded-full border border-white/8 bg-white/[0.04] p-1 text-[var(--text-quaternary)] shadow-[0_4px_12px_rgba(0,0,0,0.2)] backdrop-blur-xl group-hover:text-[var(--text-secondary)]">
         <GripVertical className="h-3.5 w-3.5" strokeWidth={1.6} />
       </div>
     </Separator>

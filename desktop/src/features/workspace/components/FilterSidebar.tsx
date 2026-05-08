@@ -61,22 +61,26 @@ function FilterChipGroup({
   options,
   selectedValues,
   onToggle,
+  compact = false,
 }: {
   icon: ReactNode;
   label: string;
   options: ReadonlyArray<FilterOption>;
   selectedValues: ReadonlyArray<string>;
   onToggle: (value: string) => void;
+  compact?: boolean;
 }) {
   return (
-    <section className="rounded-[20px] border border-white/8 bg-white/[0.03] px-3 py-3">
-      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
-        <span className="text-[var(--accent)]">{icon}</span>
+    <section className="rounded-[18px] border border-[var(--panel-border)] bg-[var(--surface-muted)] px-3 py-3">
+      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-quaternary)]">
+        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-soft)] text-[var(--accent)]">
+          {icon}
+        </span>
         {label}
       </div>
 
       {options.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className={cn("mt-3", compact ? "grid gap-1.5" : "flex flex-wrap gap-2")}>
           {options.map((option) => {
             const isSelected = selectedValues.includes(option.value);
 
@@ -84,11 +88,13 @@ function FilterChipGroup({
               <button
                 aria-pressed={isSelected}
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-left text-[11px] font-medium transition-colors outline-none",
-                  "focus-visible:border-[var(--accent)] focus-visible:ring-1 focus-visible:ring-[var(--accent)]",
+                  compact
+                    ? "flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left text-[11px] font-medium transition-colors outline-none"
+                    : "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-left text-[11px] font-medium transition-colors outline-none",
+                  "focus-visible:border-[var(--accent-ring)] focus-visible:ring-1 focus-visible:ring-[var(--accent-ring)]",
                   isSelected
-                    ? "border-[rgba(139,184,255,0.34)] bg-[rgba(139,184,255,0.14)] text-[var(--text-primary)]"
-                    : "border-white/10 bg-black/20 text-[var(--text-secondary)] hover:border-white/16 hover:text-[var(--text-primary)]",
+                    ? "border-[var(--accent-ring)] bg-[var(--surface-selected)] text-[var(--text-primary)]"
+                    : "border-white/10 bg-black/20 text-[var(--text-secondary)] hover:border-white/14 hover:bg-[var(--surface-subtle)] hover:text-[var(--text-primary)]",
                 )}
                 key={option.value}
                 onClick={() => {
@@ -96,7 +102,17 @@ function FilterChipGroup({
                 }}
                 type="button"
               >
-                <span className="max-w-[148px] truncate">{option.value}</span>
+                {compact ? (
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full",
+                      isSelected ? "bg-[var(--accent)]" : "bg-white/20",
+                    )}
+                  />
+                ) : null}
+                <span className={cn("truncate", compact ? "flex-1" : "max-w-[148px]")}>
+                  {option.value}
+                </span>
                 <span className="font-mono text-[10px] tabular-nums text-[var(--text-tertiary)]">
                   {formatCount(option.count)}
                 </span>
@@ -137,6 +153,7 @@ export function FilterSidebar() {
   const sessionOptions = useEventStore(sessionSelectorRef.current);
   const serverOptions = useEventStore(serverSelectorRef.current);
   const riskOptions = useEventStore(riskSelectorRef.current);
+  const stats = useEventStore(eventStoreSelectors.stats);
 
   const activeFilterCount = useMemo(
     () =>
@@ -152,7 +169,7 @@ export function FilterSidebar() {
       actions={
         hasActiveFilters ? (
           <button
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)] transition-colors hover:border-white/16 hover:text-[var(--text-primary)]"
+            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)] transition-colors hover:border-white/16 hover:bg-[var(--surface-subtle)] hover:text-[var(--text-primary)]"
             onClick={() => {
               actions.filters.resetFilters();
             }}
@@ -163,15 +180,17 @@ export function FilterSidebar() {
           </button>
         ) : null
       }
-      contentClassName="gap-3"
-      description="Fast local filtering for the buffered timeline. Keyboard-first: press / to focus search."
+      contentClassName="gap-2.5"
+      description="Local-first filtering for the buffered timeline. Press / to focus search."
       eyebrow="Workspace"
       title="Filters"
     >
-      <div className="rounded-[20px] border border-white/8 bg-white/[0.03] px-3 py-3">
+      <div className="rounded-[18px] border border-[var(--panel-border)] bg-[var(--surface-muted)] px-3 py-3">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
-            <Funnel className="h-3.5 w-3.5 text-[var(--accent)]" strokeWidth={1.8} />
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-quaternary)]">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-soft)]">
+              <Funnel className="h-3.5 w-3.5 text-[var(--accent)]" strokeWidth={1.8} />
+            </span>
             Active Filters
           </div>
           <span className="font-mono text-[11px] text-[var(--text-secondary)]">
@@ -181,8 +200,8 @@ export function FilterSidebar() {
 
         <label className="mt-3 block">
           <span className="sr-only">Search buffered events</span>
-          <div className="flex items-center gap-2 rounded-[16px] border border-white/10 bg-black/20 px-3 py-2 focus-within:border-[var(--accent)] focus-within:ring-1 focus-within:ring-[var(--accent)]">
-            <Search className="h-4 w-4 text-[var(--text-tertiary)]" strokeWidth={1.8} />
+          <div className="flex items-center gap-2 rounded-[14px] border border-white/10 bg-black/20 px-3 py-2.5 focus-within:border-[var(--accent-ring)] focus-within:ring-1 focus-within:ring-[var(--accent-ring)]">
+            <Search className="h-4 w-4 text-[var(--text-quaternary)]" strokeWidth={1.8} />
             <input
               className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)]"
               onChange={(event) => {
@@ -193,7 +212,7 @@ export function FilterSidebar() {
               type="text"
               value={filters.search}
             />
-            <span className="rounded-md border border-white/10 px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-tertiary)]">
+            <span className="rounded-md border border-white/10 px-1.5 py-0.5 font-mono text-[10px] text-[var(--text-quaternary)]">
               /
             </span>
           </div>
@@ -215,6 +234,7 @@ export function FilterSidebar() {
       <FilterChipGroup
         icon={<Server className="h-3.5 w-3.5" strokeWidth={1.8} />}
         label="Servers"
+        compact
         onToggle={(value) => {
           actions.filters.patchFilters({
             serverNames: toggleValue(filters.serverNames, value),
@@ -227,6 +247,7 @@ export function FilterSidebar() {
       <FilterChipGroup
         icon={<ShieldAlert className="h-3.5 w-3.5" strokeWidth={1.8} />}
         label="Risk"
+        compact
         onToggle={(value) => {
           actions.filters.patchFilters({
             riskLevels: toggleValue(filters.riskLevels, value) as typeof filters.riskLevels,
@@ -235,6 +256,26 @@ export function FilterSidebar() {
         options={riskOptions}
         selectedValues={filters.riskLevels}
       />
+
+      <div className="mt-auto rounded-[18px] border border-[var(--panel-border)] bg-black/20 px-3 py-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-quaternary)]">
+          Session Snapshot
+        </p>
+        <div className="mt-2 space-y-1.5 text-[11px] leading-5 text-[var(--text-secondary)]">
+          <p>
+            Buffered <span className="text-[var(--text-primary)]">{formatCount(stats.bufferedEvents)}</span>
+          </p>
+          <p>
+            Servers <span className="text-[var(--text-primary)]">{formatCount(Object.keys(stats.serverCounts).length)}</span>
+          </p>
+          <p>
+            High risk{" "}
+            <span className="text-[var(--text-primary)]">
+              {formatCount(stats.riskCounts.high + stats.riskCounts.critical)}
+            </span>
+          </p>
+        </div>
+      </div>
     </PanelCard>
   );
 }

@@ -91,10 +91,10 @@ export function TimelineViewport({ eventIds }: TimelineViewportProps) {
   if (eventIds.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 flex-col rounded-[22px] border border-[var(--panel-border-strong)] bg-[var(--panel-bg-strong)]">
-        <div className="grid grid-cols-[96px_88px_minmax(0,1fr)_64px_76px_78px] gap-3 border-b border-white/8 px-3 py-3">
+        <div className="grid grid-cols-[104px_92px_minmax(0,1fr)_64px_76px_78px] gap-3 border-b border-white/[0.07] px-4 py-3">
           {COLUMN_LABELS.map((label) => (
             <p
-              className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)]"
+              className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-quaternary)]"
               key={label}
             >
               {label}
@@ -102,8 +102,8 @@ export function TimelineViewport({ eventIds }: TimelineViewportProps) {
           ))}
         </div>
         <div className="flex flex-1 items-center justify-center p-6">
-          <div className="max-w-sm rounded-[20px] border border-dashed border-white/10 bg-white/[0.02] px-5 py-6 text-center">
-            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-[var(--accent)]">
+          <div className="max-w-sm rounded-[20px] border border-dashed border-white/[0.08] bg-[var(--surface-muted)] px-5 py-6 text-center">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-2xl border border-white/[0.08] bg-[var(--surface-subtle)] text-[var(--accent)]">
               <Orbit className="h-4 w-4" strokeWidth={1.8} />
             </div>
             <p className="mt-4 text-[13px] font-medium text-[var(--text-primary)]">
@@ -121,10 +121,10 @@ export function TimelineViewport({ eventIds }: TimelineViewportProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] border border-[var(--panel-border-strong)] bg-[var(--panel-bg-strong)]">
-      <div className="grid grid-cols-[96px_88px_minmax(0,1fr)_64px_76px_78px] gap-3 border-b border-white/8 px-3 py-3">
+      <div className="grid grid-cols-[104px_92px_minmax(0,1fr)_64px_76px_78px] gap-3 border-b border-white/[0.07] px-4 py-3">
         {COLUMN_LABELS.map((label) => (
           <p
-            className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)]"
+            className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-quaternary)]"
             key={label}
           >
             {label}
@@ -134,7 +134,7 @@ export function TimelineViewport({ eventIds }: TimelineViewportProps) {
 
       <div className="relative min-h-0 flex-1">
         <div
-          className="absolute inset-0 overflow-y-auto overflow-x-hidden px-2 py-2 outline-none [scrollbar-gutter:stable] focus-visible:ring-1 focus-visible:ring-[var(--accent)]"
+          className="absolute inset-0 overflow-y-auto overflow-x-hidden px-2 py-2 outline-none [scrollbar-gutter:stable] focus-visible:ring-1 focus-visible:ring-[var(--accent-ring)]"
           onKeyDown={onKeyDown}
           onPointerDownCapture={onPointerDownCapture}
           role="listbox"
@@ -172,7 +172,7 @@ export function TimelineViewport({ eventIds }: TimelineViewportProps) {
         <div className="pointer-events-none absolute bottom-3 right-3 flex justify-end">
           <button
             className={cn(
-              "pointer-events-auto inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] backdrop-blur-xl transition-all",
+              "pointer-events-auto inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] shadow-[0_8px_24px_rgba(0,0,0,0.22)] backdrop-blur-xl transition-colors",
               isFollowingLive
                 ? "border-emerald-400/16 bg-emerald-400/12 text-emerald-100"
                 : "border-white/10 bg-black/30 hover:border-white/16 hover:bg-white/[0.06]",

@@ -8,7 +8,7 @@ import {
 import { useEventStore } from "../../../../stores/event-store";
 import type { EventDirection, RiskLevel } from "../../../../types/events";
 
-export const TIMELINE_ROW_HEIGHT = 58;
+export const TIMELINE_ROW_HEIGHT = 62;
 
 const DIRECTION_STYLES: Record<EventDirection, string> = {
   notification: "border-amber-400/16 bg-amber-400/12 text-amber-100",
@@ -28,6 +28,20 @@ const RISK_STYLES: Record<RiskLevel, string> = {
   low: "border-emerald-400/18 bg-emerald-400/14 text-emerald-100",
   medium: "border-amber-400/18 bg-amber-400/14 text-amber-100",
   none: "border-white/10 bg-white/[0.04] text-[var(--text-secondary)]",
+};
+
+const RISK_BAR_STYLES: Record<RiskLevel, string> = {
+  critical: "bg-rose-400",
+  high: "bg-orange-400",
+  low: "bg-emerald-400",
+  medium: "bg-amber-400",
+  none: "bg-slate-500/70",
+};
+
+const SERVER_STYLES: Record<string, string> = {
+  bash: "border-orange-400/18 bg-orange-400/12 text-orange-100",
+  filesystem: "border-teal-400/18 bg-teal-400/12 text-teal-100",
+  github: "border-violet-400/18 bg-violet-400/12 text-violet-100",
 };
 
 function formatTimestamp(timestamp: string): string {
@@ -72,6 +86,13 @@ function getToolLabel(toolName: string | null, method: string): string {
   return method;
 }
 
+function getServerBadgeStyle(serverName: string): string {
+  return (
+    SERVER_STYLES[serverName.toLowerCase()] ??
+    "border-white/10 bg-white/[0.05] text-[var(--text-secondary)]"
+  );
+}
+
 interface TimelineEventRowProps {
   eventId: string;
 }
@@ -103,11 +124,11 @@ export const TimelineEventRow = memo(function TimelineEventRow({
     <button
       aria-selected={isSelected}
       className={cn(
-        "group h-[58px] w-full rounded-[18px] border px-3 text-left transition-colors outline-none",
-        "border-white/[0.06] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.02))]",
-        "hover:border-white/[0.12] hover:bg-white/[0.055] focus-visible:border-[var(--accent)] focus-visible:ring-1 focus-visible:ring-[var(--accent)]",
+        "group relative h-[62px] w-full rounded-[16px] border px-3.5 text-left transition-colors outline-none",
+        "border-white/[0.05] bg-[linear-gradient(180deg,rgba(255,255,255,0.028),rgba(255,255,255,0.016))]",
+        "hover:border-white/[0.1] hover:bg-[var(--surface-subtle)] focus-visible:border-[var(--accent-ring)] focus-visible:ring-1 focus-visible:ring-[var(--accent-ring)]",
         isSelected &&
-          "border-[rgba(139,184,255,0.34)] bg-[linear-gradient(180deg,rgba(139,184,255,0.14),rgba(139,184,255,0.06))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
+          "border-[var(--accent-ring)] bg-[linear-gradient(180deg,rgba(138,180,255,0.16),rgba(138,180,255,0.07))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]",
       )}
       onClick={() => {
         selectEvent(eventId);
@@ -119,31 +140,59 @@ export const TimelineEventRow = memo(function TimelineEventRow({
       tabIndex={-1}
       type="button"
     >
-      <div className="grid h-full grid-cols-[96px_88px_minmax(0,1fr)_64px_76px_78px] items-center gap-3">
+      <span
+        aria-hidden="true"
+        className={cn(
+          "absolute inset-y-2 left-1 w-0.5 rounded-full transition-opacity",
+          RISK_BAR_STYLES[event.riskLevel],
+          isSelected ? "opacity-100" : "opacity-80 group-hover:opacity-100",
+        )}
+      />
+      <div className="grid h-full grid-cols-[104px_92px_minmax(0,1fr)_64px_76px_78px] items-center gap-3">
         <div className="min-w-0 font-mono text-[11px] tabular-nums text-[var(--text-secondary)]">
           {formatTimestamp(event.timestamp)}
         </div>
 
         <div className="min-w-0">
-          <p className="truncate text-[12px] font-medium tracking-[0.01em] text-[var(--text-primary)]">
-            {event.serverName}
-          </p>
-          <p className="truncate font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
+          <span
+            className={cn(
+              "inline-flex max-w-full items-center rounded-full border px-2 py-1 text-[10px] font-semibold",
+              getServerBadgeStyle(event.serverName),
+            )}
+          >
+            <span className="truncate">{event.serverName}</span>
+          </span>
+          <p className="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--text-quaternary)]">
             {event.transport}
           </p>
         </div>
 
         <div className="min-w-0">
-          <p className="truncate text-[12px] font-medium text-[var(--text-primary)]">
-            {toolLabel}
-          </p>
+          <div className="flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className={cn(
+                "text-[12px]",
+                event.direction === "request"
+                  ? "text-sky-300"
+                  : event.direction === "response"
+                    ? "text-emerald-300"
+                    : "text-amber-300",
+              )}
+            >
+              {event.direction === "request" ? "→" : event.direction === "response" ? "←" : "•"}
+            </span>
+            <p className="truncate text-[12px] font-semibold text-[var(--text-primary)]">
+              {toolLabel}
+            </p>
+          </div>
           <p className="truncate text-[11px] text-[var(--text-secondary)]">{methodLabel}</p>
         </div>
 
         <div className="min-w-0">
           <span
             className={cn(
-              "inline-flex min-w-[52px] items-center justify-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]",
+              "inline-flex min-w-[52px] items-center justify-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]",
               DIRECTION_STYLES[event.direction],
             )}
           >
@@ -158,7 +207,7 @@ export const TimelineEventRow = memo(function TimelineEventRow({
         <div className="min-w-0">
           <span
             className={cn(
-              "inline-flex min-w-[70px] items-center justify-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]",
+              "inline-flex min-w-[70px] items-center justify-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]",
               RISK_STYLES[event.riskLevel],
             )}
           >

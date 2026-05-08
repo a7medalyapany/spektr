@@ -35,21 +35,21 @@ const baseExtensions = [
       overflow: "auto",
     },
     ".cm-gutters": {
-      backgroundColor: "rgba(255,255,255,0.02)",
-      borderRight: "1px solid rgba(255,255,255,0.08)",
+      backgroundColor: "rgba(255,255,255,0.025)",
+      borderRight: "1px solid rgba(255,255,255,0.06)",
       color: "var(--text-tertiary)",
     },
     ".cm-activeLine": {
-      backgroundColor: "rgba(255,255,255,0.03)",
+      backgroundColor: "rgba(255,255,255,0.025)",
     },
     ".cm-activeLineGutter": {
-      backgroundColor: "rgba(255,255,255,0.03)",
+      backgroundColor: "rgba(255,255,255,0.025)",
     },
     ".cm-content": {
       padding: "12px 0",
     },
     ".cm-line": {
-      padding: "0 16px",
+      padding: "0 14px",
     },
     ".cm-focused": {
       outline: "none",
