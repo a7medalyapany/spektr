@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -33,19 +34,19 @@ type Store struct {
 }
 
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", sqliteDSN(path))
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database: %w", err)
 	}
-
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(0)
 
 	if err := applyPragmas(db); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
+
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(4)
+	db.SetConnMaxLifetime(0)
 
 	if err := runMigrations(db); err != nil {
 		_ = db.Close()
@@ -99,7 +100,8 @@ func (s *Store) Close() error {
 
 func applyPragmas(db *sql.DB) error {
 	pragmas := []string{
-		"PRAGMA journal_mode=DELETE",
+		"PRAGMA journal_mode=WAL",
+		"PRAGMA synchronous=NORMAL",
 		"PRAGMA busy_timeout=5000",
 		"PRAGMA foreign_keys=ON",
 	}
@@ -111,6 +113,21 @@ func applyPragmas(db *sql.DB) error {
 	}
 
 	return nil
+}
+
+func sqliteDSN(path string) string {
+	query := url.Values{}
+	query.Add("_txlock", "immediate")
+	query.Add("_pragma", "journal_mode=WAL")
+	query.Add("_pragma", "synchronous=NORMAL")
+	query.Add("_pragma", "busy_timeout=5000")
+	query.Add("_pragma", "foreign_keys=ON")
+
+	return (&url.URL{
+		Scheme:   "file",
+		Path:     path,
+		RawQuery: query.Encode(),
+	}).String()
 }
 
 func unixMillis(t time.Time) int64 {
