@@ -144,7 +144,7 @@ func (s *Server) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "event not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, event)
+	writeJSON(w, http.StatusOK, newEventDetailResponse(event))
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
