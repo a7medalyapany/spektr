@@ -60,9 +60,47 @@ func (s *Store) BatchInsert(ctx context.Context, events []*types.MCPEvent) error
 			return err
 		}
 	}
+	if err := updateSessionTotals(ctx, tx, events); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit batch insert: %w", err)
+	}
+
+	return nil
+}
+
+func updateSessionTotals(ctx context.Context, tx *sql.Tx, events []*types.MCPEvent) error {
+	type totals struct {
+		count int
+		cost  float64
+	}
+
+	bySession := make(map[string]totals)
+	for _, event := range events {
+		if event == nil || event.SessionID == "" {
+			continue
+		}
+		total := bySession[event.SessionID]
+		total.count++
+		if event.Cost != nil {
+			total.cost += event.Cost.TotalUSD
+		}
+		bySession[event.SessionID] = total
+	}
+
+	for sessionID, total := range bySession {
+		if _, err := tx.ExecContext(
+			ctx,
+			`UPDATE sessions SET total_events = total_events + ?, total_cost = total_cost + ? WHERE id = ?`,
+			total.count,
+			total.cost,
+			sessionID,
+		); err != nil {
+			return fmt.Errorf("update session totals for %s: %w", sessionID, err)
+		}
 	}
 
 	return nil
