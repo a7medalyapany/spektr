@@ -31,12 +31,14 @@ interface InspectorMetaItemProps {
 
 function InspectorMetaItem({ icon, label, value }: InspectorMetaItemProps) {
   return (
-    <div className="rounded-[18px] border border-white/8 bg-white/[0.03] px-3 py-2.5">
-      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
-        <span className="text-[var(--accent)]">{icon}</span>
+    <div className="rounded-[var(--radius-subpanel)] border border-white/[0.06] bg-black/[0.16] px-2.5 py-2">
+      <div className="flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-quaternary)]">
+        <span className="flex h-5 w-5 items-center justify-center rounded-md bg-white/[0.045] text-[var(--accent)]">
+          {icon}
+        </span>
         {label}
       </div>
-      <p className="mt-2 break-all text-[13px] font-medium tracking-[0.01em] text-[var(--text-primary)]">
+      <p className="mt-1.5 break-all text-[11px] font-medium leading-4 tracking-[0.01em] text-[var(--text-primary)]">
         {value}
       </p>
     </div>
@@ -51,9 +53,9 @@ const InspectorCodeBlock = memo(function InspectorCodeBlock({
   document: string;
 }) {
   return (
-    <section className="flex min-h-[280px] flex-1 flex-col overflow-hidden rounded-[20px] border border-white/8 bg-black/20">
-      <div className="border-b border-white/8 px-4 py-2.5">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+    <section className="flex min-h-[220px] flex-1 flex-col overflow-hidden rounded-[var(--radius-subpanel)] border border-white/[0.06] bg-black/20">
+      <div className="border-b border-white/[0.07] bg-black/[0.18] px-3 py-2">
+        <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-quaternary)]">
           {title}
         </p>
       </div>
@@ -70,14 +72,14 @@ function PayloadTabs({
   onChange: (tab: PayloadTab) => void;
 }) {
   return (
-    <div className="inline-flex rounded-full border border-white/10 bg-black/20 p-1">
+    <div className="inline-flex rounded-md border border-white/10 bg-black/20 p-0.5">
       {(["parsed", "raw"] as const).map((tab) => (
         <button
           className={cn(
-            "rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] transition-colors",
+            "rounded px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] transition-colors",
             activeTab === tab
-              ? "bg-[var(--accent-soft)] text-[var(--text-primary)]"
-              : "text-[var(--text-tertiary)] hover:text-[var(--text-primary)]",
+              ? "bg-white/[0.075] text-[var(--text-primary)]"
+              : "text-[var(--text-tertiary)] hover:bg-[var(--surface-subtle)] hover:text-[var(--text-primary)]",
           )}
           key={tab}
           onClick={() => {
@@ -105,9 +107,9 @@ function DetailPayloadView({ detail }: { detail: MCPEventDetail }) {
   const rawDocument = useMemo(() => sanitizeRawPayload(detail.rawPayload), [detail.rawPayload]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+        <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-quaternary)]">
           Payload View
         </p>
         <PayloadTabs activeTab={activeTab} onChange={setActiveTab} />
@@ -116,7 +118,7 @@ function DetailPayloadView({ detail }: { detail: MCPEventDetail }) {
       {activeTab === "raw" ? (
         <InspectorCodeBlock document={rawDocument} title="Raw JSON-RPC" />
       ) : parsedSections.length > 0 ? (
-        <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-2">
+        <div className="grid min-h-0 flex-1 gap-2 xl:grid-cols-2">
           {parsedSections.map((section) => (
             <InspectorCodeBlock
               document={section.document}
@@ -126,7 +128,7 @@ function DetailPayloadView({ detail }: { detail: MCPEventDetail }) {
           ))}
         </div>
       ) : (
-        <div className="flex min-h-[180px] items-center justify-center rounded-[20px] border border-dashed border-white/10 bg-black/10 px-4 text-center">
+        <div className="flex min-h-[180px] items-center justify-center rounded-[var(--radius-subpanel)] border border-dashed border-white/[0.08] bg-black/10 px-4 text-center">
           <p className="max-w-sm text-[12px] leading-5 text-[var(--text-secondary)]">
             No parsed payload fields were extracted for this event. Switch to the raw view to
             inspect the underlying JSON-RPC frame.
@@ -154,32 +156,43 @@ function DetailState({
 
   return (
     <PanelCard
-      contentClassName="gap-3"
+      contentClassName="gap-2"
       description={description}
       eyebrow="Inspector"
       title={title}
     >
-      <div className="rounded-[20px] border border-white/8 bg-white/[0.03] px-4 py-4">
+      <div className="rounded-[var(--radius-subpanel)] border border-white/[0.07] bg-black/[0.16] px-3 py-3">
         <div className="flex flex-wrap items-center gap-3">
           <span
             className={cn(
-              "inline-flex min-w-[82px] items-center justify-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]",
+              "inline-flex min-w-[74px] items-center justify-center rounded-full border px-2.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em]",
               INSPECTOR_RISK_STYLES[detail.riskLevel],
             )}
           >
             {detail.riskLevel === "none" ? "clean" : detail.riskLevel}
           </span>
-          <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
+          <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
             {detail.serverName} · {detail.direction} · {detail.transport}
           </p>
         </div>
-        <p className="mt-4 text-[16px] font-medium tracking-[0.01em] text-[var(--text-primary)]">
+        <p className="mt-3 text-[15px] font-semibold tracking-[0.01em] text-[var(--text-primary)]">
           {primaryLabel}
         </p>
         <p className="mt-1 text-[12px] text-[var(--text-secondary)]">{detail.method}</p>
+        {detail.paused || detail.riskLevel === "critical" ? (
+          <div className="mt-3 rounded-[var(--radius-subpanel)] border border-rose-400/22 bg-rose-400/10 px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-200">
+              {detail.paused ? "Auto-paused" : "Critical risk"}
+            </p>
+            <p className="mt-1 text-[11px] leading-4 text-rose-100/75">
+              {detail.riskFlags[0]?.description ??
+                "This event has elevated risk and should be inspected before continuing."}
+            </p>
+          </div>
+        ) : null}
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-2 md:grid-cols-2">
         <InspectorMetaItem
           icon={<Clock3 className="h-4 w-4" strokeWidth={1.8} />}
           label="Timestamp"
@@ -192,7 +205,7 @@ function DetailState({
         />
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         <InspectorMetaItem
           icon={<ScanSearch className="h-4 w-4" strokeWidth={1.8} />}
           label="Session"
@@ -216,20 +229,20 @@ function DetailState({
       </div>
 
       {detail.pairedId ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-white/8 bg-white/[0.03] px-3 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-subpanel)] border border-white/[0.06] bg-black/[0.16] px-2.5 py-2.5">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-quaternary)]">
               Request / Response Link
             </p>
-            <p className="mt-1 font-mono text-[11px] text-[var(--text-secondary)]">
+            <p className="mt-1 font-mono text-[10px] text-[var(--text-secondary)]">
               {detail.pairedId}
             </p>
           </div>
           <button
             className={cn(
-              "rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] transition-colors",
+              "rounded-md border px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] transition-colors",
               canJumpToPaired
-                ? "border-[var(--accent-soft)] bg-[var(--accent-soft)] text-[var(--text-primary)] hover:border-[var(--accent)]"
+                ? "border-[var(--accent-ring)] bg-white/[0.07] text-[var(--text-primary)] hover:bg-white/[0.1]"
                 : "cursor-not-allowed border-white/10 bg-white/[0.03] text-[var(--text-tertiary)]",
             )}
             disabled={!canJumpToPaired}
@@ -242,20 +255,20 @@ function DetailState({
       ) : null}
 
       {detail.riskFlags.length > 0 ? (
-        <div className="rounded-[20px] border border-white/8 bg-black/20 px-4 py-3">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+        <div className="rounded-[var(--radius-subpanel)] border border-white/[0.06] bg-black/20 px-3 py-2.5">
+          <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-quaternary)]">
             Risk Indicators
           </p>
-          <div className="mt-3 grid gap-2">
+          <div className="mt-2 grid gap-1.5">
             {detail.riskFlags.map((flag) => (
               <div
-                className="rounded-[16px] border border-white/8 bg-white/[0.03] px-3 py-2"
+                className="rounded-[var(--radius-subpanel)] border border-white/[0.06] bg-[var(--surface-muted)] px-2.5 py-2"
                 key={`${flag.rule}-${flag.description}`}
               >
-                <p className="text-[12px] font-medium text-[var(--text-primary)]">
+                <p className="text-[11px] font-medium text-[var(--text-primary)]">
                   {flag.rule} · {flag.level}
                 </p>
-                <p className="mt-1 text-[11px] leading-5 text-[var(--text-secondary)]">
+                <p className="mt-1 text-[11px] leading-4 text-[var(--text-secondary)]">
                   {flag.description}
                 </p>
               </div>
@@ -276,13 +289,13 @@ function DetailSkeleton({ title }: { title: string }) {
       eyebrow="Inspector"
       title={title}
     >
-      <div className="grid gap-3">
-        <div className="h-28 animate-pulse rounded-[20px] border border-white/8 bg-white/[0.03]" />
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="h-20 animate-pulse rounded-[18px] border border-white/8 bg-white/[0.03]" />
-          <div className="h-20 animate-pulse rounded-[18px] border border-white/8 bg-white/[0.03]" />
+      <div className="grid gap-2">
+        <div className="h-24 animate-pulse rounded-[var(--radius-subpanel)] border border-[var(--panel-border)] bg-[var(--surface-muted)]" />
+        <div className="grid gap-2 md:grid-cols-2">
+          <div className="h-16 animate-pulse rounded-[var(--radius-subpanel)] border border-[var(--panel-border)] bg-[var(--surface-muted)]" />
+          <div className="h-16 animate-pulse rounded-[var(--radius-subpanel)] border border-[var(--panel-border)] bg-[var(--surface-muted)]" />
         </div>
-        <div className="h-72 animate-pulse rounded-[20px] border border-white/8 bg-black/20" />
+        <div className="h-64 animate-pulse rounded-[var(--radius-subpanel)] border border-[var(--panel-border)] bg-black/20" />
       </div>
     </PanelCard>
   );
@@ -295,7 +308,7 @@ function DetailErrorState({ title, message }: { title: string; message: string }
       eyebrow="Inspector"
       title={title}
     >
-      <div className="rounded-[20px] border border-rose-400/18 bg-rose-400/10 px-4 py-4">
+      <div className="rounded-[var(--radius-subpanel)] border border-rose-400/18 bg-rose-400/10 px-3 py-3">
         <p className="text-[12px] font-medium text-rose-100">Unable to load event detail</p>
         <p className="mt-2 text-[12px] leading-5 text-rose-100/80">{message}</p>
       </div>
@@ -375,7 +388,7 @@ function EmptyInspectorState() {
       eyebrow="Inspector"
       title="Event Detail"
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-2">
         <InspectorMetaItem
           icon={<Braces className="h-4 w-4" strokeWidth={1.8} />}
           label="Primary Detail"
@@ -386,8 +399,8 @@ function EmptyInspectorState() {
           label="Payload Views"
           value="Parsed structures and raw JSON-RPC"
         />
-        <div className="min-h-0 flex-1 rounded-[20px] border border-dashed border-white/10 bg-black/10 p-4">
-          <p className="text-[11px] uppercase tracking-[0.18em] text-[var(--text-tertiary)]">
+        <div className="min-h-0 flex-1 rounded-[var(--radius-subpanel)] border border-dashed border-white/[0.08] bg-black/10 p-3">
+          <p className="text-[10px] uppercase tracking-[0.14em] text-[var(--text-quaternary)]">
             Waiting for selection
           </p>
           <p className="mt-3 max-w-sm text-[12px] leading-5 text-[var(--text-secondary)]">
@@ -410,7 +423,7 @@ export const EventInspectorDetails = memo(function EventInspectorDetails({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
       <LinkedDetailPanel event={event} />
       <PairedDetailPanel event={event} />
     </div>

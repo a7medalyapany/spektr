@@ -27,7 +27,7 @@ const baseExtensions = [
       backgroundColor: "transparent",
       color: "var(--text-primary)",
       fontFamily: '"SF Mono", "JetBrains Mono", "IBM Plex Mono", monospace',
-      fontSize: "11px",
+      fontSize: "10.5px",
       height: "100%",
     },
     ".cm-scroller": {
@@ -35,21 +35,21 @@ const baseExtensions = [
       overflow: "auto",
     },
     ".cm-gutters": {
-      backgroundColor: "rgba(255,255,255,0.02)",
-      borderRight: "1px solid rgba(255,255,255,0.08)",
+      backgroundColor: "rgba(0,0,0,0.16)",
+      borderRight: "1px solid rgba(255,255,255,0.06)",
       color: "var(--text-tertiary)",
     },
     ".cm-activeLine": {
-      backgroundColor: "rgba(255,255,255,0.03)",
+      backgroundColor: "rgba(255,255,255,0.025)",
     },
     ".cm-activeLineGutter": {
-      backgroundColor: "rgba(255,255,255,0.03)",
+      backgroundColor: "rgba(255,255,255,0.025)",
     },
     ".cm-content": {
-      padding: "12px 0",
+      padding: "10px 0",
     },
     ".cm-line": {
-      padding: "0 16px",
+      padding: "0 12px",
     },
     ".cm-focused": {
       outline: "none",
