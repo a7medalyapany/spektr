@@ -326,6 +326,7 @@ function LinkedDetailPanel({ event }: { event: MCPEvent }) {
     enabled: Boolean(event.sessionId && event.id),
     queryFn: ({ signal }) => fetchEventDetail(event.sessionId, event.id, signal),
     queryKey: queryKeys.eventDetail(event.sessionId, event.id),
+    staleTime: Infinity,
   });
 
   if (detailQuery.isPending) {
@@ -356,6 +357,7 @@ function PairedDetailPanel({ event }: { event: MCPEvent }) {
     enabled: Boolean(event.pairedId),
     queryFn: ({ signal }) => fetchEventDetail(event.sessionId, event.pairedId as string, signal),
     queryKey: queryKeys.eventDetail(event.sessionId, event.pairedId ?? "missing"),
+    staleTime: Infinity,
   });
 
   if (!event.pairedId) {
