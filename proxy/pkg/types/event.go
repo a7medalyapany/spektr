@@ -87,6 +87,8 @@ type ProxyReport struct {
 
 // DaemonConfig is the JSON the Tauri shell sends to the daemon via stdin on startup.
 type DaemonConfig struct {
+	// ProxyBinPath is the absolute path to the spektr-proxy binary.
+	ProxyBinPath string `json:"proxy_bin_path"`
 	// ProxyPort is the local port spektr-proxy binds for forwarding.
 	ProxyPort int `json:"proxy_port"`
 	// WSPort is the WebSocket port used by the daemon.
