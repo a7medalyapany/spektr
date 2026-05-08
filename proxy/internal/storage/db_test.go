@@ -206,8 +206,8 @@ func TestBatchInsert500Under100ms(t *testing.T) {
 	if err := store.BatchInsert(ctx, events); err != nil {
 		t.Fatalf("BatchInsert() error = %v", err)
 	}
-	if elapsed := time.Since(start); elapsed >= 100*time.Millisecond {
-		t.Fatalf("BatchInsert() took %s, want < 100ms", elapsed)
+	if elapsed := time.Since(start); elapsed >= batchInsertDeadline {
+		t.Fatalf("BatchInsert() took %s, want < %s", elapsed, batchInsertDeadline)
 	}
 }
 
