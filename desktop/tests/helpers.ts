@@ -14,6 +14,7 @@ interface TestEventOverrides {
   pairedId?: string | null;
   riskLevel?: RiskLevel;
   serverName?: string;
+  sessionId?: string;
   timestamp?: string;
 }
 
@@ -27,7 +28,7 @@ export function createTestEvent(
 
   return {
     id: overrides.id ?? `event-${index}`,
-    session_id: "session-1",
+    session_id: overrides.sessionId ?? "session-1",
     paired_id: overrides.pairedId ?? undefined,
     server_name: overrides.serverName ?? "filesystem",
     server_pid: 1000 + index,
