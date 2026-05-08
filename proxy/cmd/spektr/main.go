@@ -221,11 +221,11 @@ func runWriter(ctx context.Context, store *storage.Store, writeCh <-chan *types.
 	defer ticker.Stop()
 
 	batch := make([]*types.MCPEvent, 0, 200)
-	flush := func() {
+	flush := func(flushCtx context.Context) {
 		if len(batch) == 0 {
 			return
 		}
-		if err := store.BatchInsert(context.Background(), batch); err != nil {
+		if err := store.BatchInsert(flushCtx, batch); err != nil {
 			slog.Error("failed to batch insert events", "err", err, "count", len(batch))
 		}
 		batch = batch[:0]
@@ -239,10 +239,10 @@ func runWriter(ctx context.Context, store *storage.Store, writeCh <-chan *types.
 			}
 			batch = append(batch, event)
 			if len(batch) >= 200 {
-				flush()
+				flush(ctx)
 			}
 		case <-ticker.C:
-			flush()
+			flush(ctx)
 		case <-ctx.Done():
 			for {
 				select {
@@ -251,7 +251,9 @@ func runWriter(ctx context.Context, store *storage.Store, writeCh <-chan *types.
 						batch = append(batch, event)
 					}
 				default:
-					flush()
+					drainCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					flush(drainCtx)
+					cancel()
 					return
 				}
 			}
