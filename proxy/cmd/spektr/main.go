@@ -10,12 +10,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/spektr-dev/spektr/internal/config"
 	"github.com/spektr-dev/spektr/internal/pipeline"
 	"github.com/spektr-dev/spektr/internal/storage"
 	"github.com/spektr-dev/spektr/internal/stream"
@@ -52,6 +54,7 @@ func main() {
 		os.Exit(1)
 	}
 	sessionID := sessionUUID.String()
+	backupDir := backupDirForSession(sessionID)
 
 	if err := store.InsertSession(baseCtx, &types.Session{
 		ID:        sessionID,
@@ -60,6 +63,24 @@ func main() {
 	}); err != nil {
 		slog.Error("failed to insert session", "err", err)
 		os.Exit(1)
+	}
+
+	if cfg.ProxyBinPath == "" {
+		slog.Warn("proxy binary path not configured; skipping agent config patching")
+	} else if backupDir == "" {
+		slog.Warn("home directory not available; skipping agent config patching")
+	} else if err := os.MkdirAll(backupDir, 0700); err != nil {
+		slog.Warn("failed to create backup dir", "err", err)
+	} else {
+		agents := config.DetectAgents()
+		for _, agent := range agents {
+			result, err := config.PatchAgent(agent, cfg.ProxyBinPath, cfg.SocketPath, backupDir)
+			if err != nil {
+				slog.Warn("failed to patch agent config", "agent", agent, "err", err)
+				continue
+			}
+			slog.Info("patched agent config", "agent", agent, "servers", result.Patched)
+		}
 	}
 
 	enricher := pipeline.NewEnricher(sessionID)
@@ -119,6 +140,21 @@ func main() {
 
 	<-ctx.Done()
 
+	if backupDir != "" {
+		for _, agent := range config.DetectAgents() {
+			backupPath := backupPathForAgent(backupDir, agent)
+			if _, err := os.Stat(backupPath); os.IsNotExist(err) {
+				continue
+			} else if err != nil {
+				slog.Error("failed to stat agent config backup", "agent", agent, "err", err)
+				continue
+			}
+			if err := config.RestoreAgent(agent, backupPath); err != nil {
+				slog.Error("failed to restore agent config", "agent", agent, "err", err)
+			}
+		}
+	}
+
 	shutdownCtx, shutdownCancel := context.WithTimeout(baseCtx, 5*time.Second)
 	defer shutdownCancel()
 
@@ -134,6 +170,26 @@ func main() {
 
 	writeCancel()
 	writerWG.Wait()
+}
+
+func backupDirForSession(sessionID string) string {
+	home := os.Getenv("HOME")
+	if home == "" {
+		var err error
+		home, err = os.UserHomeDir()
+		if err != nil {
+			return ""
+		}
+	}
+	return filepath.Join(home, ".spektr", "backups", sessionID)
+}
+
+func backupPathForAgent(backupDir string, agent config.AgentType) string {
+	backupName := string(agent) + ".json.bak"
+	if agent == config.AgentCodex {
+		backupName = "codex.toml.bak"
+	}
+	return filepath.Join(backupDir, backupName)
 }
 
 func acceptProxyReports(

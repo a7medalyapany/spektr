@@ -4,7 +4,7 @@ PROXY_DIR   := proxy
 DESKTOP_DIR := desktop
 BINS        := $(DESKTOP_DIR)/src-tauri/binaries
 
-dev:
+dev: proxy-build
 	cd $(DESKTOP_DIR) && npm run tauri dev
 
 ui-dev:
