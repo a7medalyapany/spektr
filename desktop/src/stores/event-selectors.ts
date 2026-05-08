@@ -1,12 +1,20 @@
 import type { EventStoreState } from "./event-store";
 import type { EventFilters } from "./event-store";
 import type { MCPEvent } from "../types/events";
+import type { RiskLevel } from "../types/events";
 
 const EMPTY_EVENT_IDS: ReadonlyArray<string> = [];
+const EMPTY_FILTER_OPTIONS: ReadonlyArray<FilterOption> = [];
+
+export interface FilterOption {
+  value: string;
+  count: number;
+}
 
 function hasActiveFilters(filters: EventFilters): boolean {
   return (
     filters.search.trim().length > 0 ||
+    filters.sessionIds.length > 0 ||
     filters.serverNames.length > 0 ||
     filters.riskLevels.length > 0 ||
     filters.directions.length > 0 ||
@@ -17,6 +25,10 @@ function hasActiveFilters(filters: EventFilters): boolean {
 
 function eventMatchesFilters(event: MCPEvent, filters: EventFilters): boolean {
   if (filters.showPausedOnly && !event.paused) {
+    return false;
+  }
+
+  if (filters.sessionIds.length > 0 && !filters.sessionIds.includes(event.sessionId)) {
     return false;
   }
 
@@ -64,6 +76,53 @@ export const eventStoreSelectors = {
   stats: (state: EventStoreState) => state.stats,
   timelineIds: (state: EventStoreState) => state.ring.ids,
 } as const;
+
+export function makeFilterOptionsSelector(
+  mode: "session" | "server" | "risk",
+) {
+  let previousIds = EMPTY_EVENT_IDS;
+  let previousEventsVersion = -1;
+  let previousResult = EMPTY_FILTER_OPTIONS;
+
+  return (state: EventStoreState): ReadonlyArray<FilterOption> => {
+    if (previousIds === state.ring.ids && previousEventsVersion === state.eventsVersion) {
+      return previousResult;
+    }
+
+    const counts = new Map<string, number>();
+
+    for (const id of state.ring.ids) {
+      const event = state.eventsById.get(id);
+      if (!event) {
+        continue;
+      }
+
+      const value =
+        mode === "session"
+          ? event.sessionId
+          : mode === "server"
+            ? event.serverName
+            : (event.riskLevel satisfies RiskLevel);
+
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+
+    previousIds = state.ring.ids;
+    previousEventsVersion = state.eventsVersion;
+    previousResult =
+      counts.size === 0
+        ? EMPTY_FILTER_OPTIONS
+        : Array.from(counts, ([value, count]) => ({ value, count })).sort((left, right) => {
+            if (right.count !== left.count) {
+              return right.count - left.count;
+            }
+
+            return left.value.localeCompare(right.value);
+          });
+
+    return previousResult;
+  };
+}
 
 export function makeEventByIdSelector(eventId: string) {
   return (state: EventStoreState): MCPEvent | null => state.eventsById.get(eventId) ?? null;

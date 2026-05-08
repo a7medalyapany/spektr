@@ -21,6 +21,7 @@ export type ConnectionStatus =
 
 export interface EventFilters {
   search: string;
+  sessionIds: ReadonlyArray<string>;
   serverNames: ReadonlyArray<string>;
   riskLevels: ReadonlyArray<RiskLevel>;
   directions: ReadonlyArray<EventDirection>;
@@ -110,6 +111,7 @@ const EMPTY_EVENT_IDS: ReadonlyArray<string> = [];
 function createDefaultFilters(): EventFilters {
   return {
     search: "",
+    sessionIds: [],
     serverNames: [],
     riskLevels: [],
     directions: [],
