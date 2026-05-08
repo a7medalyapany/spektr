@@ -3,8 +3,10 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/spektr-dev/spektr/pkg/types"
@@ -19,6 +21,8 @@ type ListEventsOpts struct {
 	Offset    int
 }
 
+const eventBatchInsertChunkSize = 500
+
 func (s *Store) InsertEvent(ctx context.Context, e *types.MCPEvent) error {
 	if e == nil {
 		return fmt.Errorf("insert event: nil event")
@@ -31,6 +35,9 @@ func (s *Store) InsertEvent(ctx context.Context, e *types.MCPEvent) error {
 
 	if _, err := execStmtContext(ctx, s.stmtInsertEvent, args...); err != nil {
 		return fmt.Errorf("insert event %s: %w", e.ID, err)
+	}
+	if err := syncEventsFTS(ctx, s.db, []string{e.ID}); err != nil {
+		return fmt.Errorf("sync fts for event %s: %w", e.ID, err)
 	}
 
 	return nil
@@ -46,24 +53,217 @@ func (s *Store) BatchInsert(ctx context.Context, events []*types.MCPEvent) error
 		return fmt.Errorf("begin batch insert: %w", err)
 	}
 
-	stmt := tx.StmtContext(ctx, s.stmtInsertEvent)
-	defer stmt.Close()
-
-	for _, event := range events {
-		args, err := eventInsertArgs(event)
-		if err != nil {
+	for start := 0; start < len(events); start += eventBatchInsertChunkSize {
+		end := min(start+eventBatchInsertChunkSize, len(events))
+		if err := batchInsertChunk(ctx, tx, events[start:end]); err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("build insert args for event %s: %w", event.ID, err)
-		}
-
-		if _, err := stmt.ExecContext(ctx, args...); err != nil {
-			_ = tx.Rollback()
-			return fmt.Errorf("insert event %s in batch: %w", event.ID, err)
+			return err
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit batch insert: %w", err)
+	}
+
+	return nil
+}
+
+func batchInsertChunk(ctx context.Context, tx *sql.Tx, events []*types.MCPEvent) error {
+	query := strings.Builder{}
+	query.Grow(len(insertEventSQL) + 512*len(events))
+	query.WriteString(`
+INSERT INTO events (
+    id, session_id, paired_id, server_name, server_pid, transport, direction, message_type,
+    category, method, message_id, tool_name, params, result, error_code, error_message,
+    timestamp, duration_ms, risk_level, risk_flags, paused, input_tokens, output_tokens,
+    cost_usd, raw_payload
+) VALUES `)
+
+	for i, event := range events {
+		if i > 0 {
+			query.WriteByte(',')
+		}
+		valuesSQL, err := eventInsertValuesSQL(event)
+		if err != nil {
+			return fmt.Errorf("build insert args for event %s: %w", event.ID, err)
+		}
+		query.WriteString(valuesSQL)
+	}
+
+	if _, err := tx.ExecContext(ctx, query.String()); err != nil {
+		return fmt.Errorf("insert batch chunk (%d events): %w", len(events), err)
+	}
+	ids := make([]string, 0, len(events))
+	for _, event := range events {
+		ids = append(ids, event.ID)
+	}
+	if err := syncEventsFTS(ctx, tx, ids); err != nil {
+		return fmt.Errorf("sync fts batch chunk (%d events): %w", len(events), err)
+	}
+
+	return nil
+}
+
+func eventInsertValuesSQL(e *types.MCPEvent) (string, error) {
+	if e == nil {
+		return "", fmt.Errorf("nil event")
+	}
+
+	riskFlags, err := json.Marshal(e.RiskFlags)
+	if err != nil {
+		return "", fmt.Errorf("marshal risk flags: %w", err)
+	}
+
+	var b strings.Builder
+	b.Grow(512)
+	b.WriteByte('(')
+	writeSQLValue(&b, e.ID)
+	b.WriteByte(',')
+	writeSQLValue(&b, e.SessionID)
+	b.WriteByte(',')
+	writeSQLValue(&b, emptyStringAsNil(e.PairedID))
+	b.WriteByte(',')
+	writeSQLValue(&b, e.ServerName)
+	b.WriteByte(',')
+	b.WriteString(strconv.Itoa(e.ServerPID))
+	b.WriteByte(',')
+	writeSQLValue(&b, string(e.Transport))
+	b.WriteByte(',')
+	writeSQLValue(&b, string(e.Direction))
+	b.WriteByte(',')
+	writeSQLValue(&b, string(e.MessageType))
+	b.WriteByte(',')
+	writeSQLValue(&b, string(e.Category))
+	b.WriteByte(',')
+	writeSQLValue(&b, e.Method)
+	b.WriteByte(',')
+	writeRawMessageSQLValue(&b, e.MessageID)
+	b.WriteByte(',')
+	writeSQLValue(&b, emptyStringAsNil(e.ToolName))
+	b.WriteByte(',')
+	writeBlobSQLValue(&b, []byte(e.Params))
+	b.WriteByte(',')
+	writeBlobSQLValue(&b, []byte(e.Result))
+	b.WriteByte(',')
+	if e.Error != nil {
+		b.WriteString(strconv.Itoa(e.Error.Code))
+	} else {
+		b.WriteString("NULL")
+	}
+	b.WriteByte(',')
+	if e.Error != nil {
+		writeSQLValue(&b, e.Error.Message)
+	} else {
+		b.WriteString("NULL")
+	}
+	b.WriteByte(',')
+	b.WriteString(strconv.FormatInt(unixMillis(e.Timestamp), 10))
+	b.WriteByte(',')
+	b.WriteString(strconv.FormatInt(e.DurationMs, 10))
+	b.WriteByte(',')
+	writeSQLValue(&b, string(e.RiskLevel))
+	b.WriteByte(',')
+	writeBlobSQLValue(&b, riskFlags)
+	b.WriteByte(',')
+	b.WriteString(strconv.Itoa(boolToInt(e.Paused)))
+	b.WriteByte(',')
+	if e.Cost != nil {
+		b.WriteString(strconv.Itoa(e.Cost.InputTokens))
+	} else {
+		b.WriteByte('0')
+	}
+	b.WriteByte(',')
+	if e.Cost != nil {
+		b.WriteString(strconv.Itoa(e.Cost.OutputTokens))
+	} else {
+		b.WriteByte('0')
+	}
+	b.WriteByte(',')
+	if e.Cost != nil {
+		b.WriteString(strconv.FormatFloat(e.Cost.TotalUSD, 'f', -1, 64))
+	} else {
+		b.WriteByte('0')
+	}
+	b.WriteByte(',')
+	writeBlobSQLValue(&b, e.RawPayload)
+	b.WriteByte(')')
+
+	return b.String(), nil
+}
+
+func writeSQLValue(b *strings.Builder, value any) {
+	switch v := value.(type) {
+	case nil:
+		b.WriteString("NULL")
+	case string:
+		b.WriteByte('\'')
+		b.WriteString(strings.ReplaceAll(v, "'", "''"))
+		b.WriteByte('\'')
+	default:
+		b.WriteString(fmt.Sprint(v))
+	}
+}
+
+func writeRawMessageSQLValue(b *strings.Builder, msg *json.RawMessage) {
+	if msg == nil {
+		b.WriteString("NULL")
+		return
+	}
+
+	writeSQLValue(b, string(*msg))
+}
+
+func writeBlobSQLValue(b *strings.Builder, blob []byte) {
+	if blob == nil {
+		b.WriteString("NULL")
+		return
+	}
+
+	b.WriteString("X'")
+	dst := make([]byte, hex.EncodedLen(len(blob)))
+	hex.Encode(dst, blob)
+	b.Write(dst)
+	b.WriteByte('\'')
+}
+
+func emptyStringAsNil(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
+}
+
+type execContexter interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+func syncEventsFTS(ctx context.Context, execer execContexter, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	query := strings.Builder{}
+	query.Grow(256 + len(ids)*40)
+	query.WriteString(`
+INSERT INTO events_fts(rowid, id, tool_name, params_text, result_text)
+SELECT
+    rowid,
+    id,
+    COALESCE(tool_name, ''),
+    COALESCE(CAST(params AS TEXT), ''),
+    COALESCE(CAST(result AS TEXT), '')
+FROM events
+WHERE id IN (`)
+	for i, id := range ids {
+		if i > 0 {
+			query.WriteByte(',')
+		}
+		writeSQLValue(&query, id)
+	}
+	query.WriteString(")")
+
+	if _, err := execer.ExecContext(ctx, query.String()); err != nil {
+		return fmt.Errorf("sync events fts: %w", err)
 	}
 
 	return nil

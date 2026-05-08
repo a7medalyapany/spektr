@@ -12,6 +12,10 @@ import (
 var migrationFS embed.FS
 
 func runMigrations(db *sql.DB) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY)`); err != nil {
+		return fmt.Errorf("create schema_migrations table: %w", err)
+	}
+
 	entries, err := migrationFS.ReadDir("migrations")
 	if err != nil {
 		return fmt.Errorf("read migrations directory: %w", err)
@@ -38,9 +42,26 @@ func runMigrations(db *sql.DB) error {
 			return fmt.Errorf("begin migration %s: %w", name, err)
 		}
 
+		var appliedCount int
+		if err := tx.QueryRow("SELECT COUNT(*) FROM schema_migrations WHERE name = ?", name).Scan(&appliedCount); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("check migration %s: %w", name, err)
+		}
+		if appliedCount > 0 {
+			if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+				return fmt.Errorf("rollback skipped migration %s: %w", name, err)
+			}
+			continue
+		}
+
 		if _, err := tx.Exec(string(sqlBytes)); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("execute migration %s: %w", name, err)
+		}
+
+		if _, err := tx.Exec("INSERT INTO schema_migrations (name) VALUES (?)", name); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("record migration %s: %w", name, err)
 		}
 
 		if err := tx.Commit(); err != nil {
